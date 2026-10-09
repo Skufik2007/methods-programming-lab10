@@ -63,8 +63,16 @@ def main() -> None:
     status, _ = call("POST", f"{args.go}/api/v1/orders", order, token=token)
     check(status == 201, f"Go: заказ создан ({status})")
 
+    via_py = {**order, "items": [{"sku": "XYZ-777", "quantity": 3, "price": 0.1}], "comment": "через Python «ок»"}
+    status, created = call("POST", f"{args.py}/api/v1/orders", via_py, token=token)
+    check(status == 201 and created["items"] == via_py["items"], f"Python передал вложенный заказ в Go ({status})")
+
     status, body = call("GET", f"{args.py}/api/v1/orders/summary", token=token)
-    check(status == 200 and body["count"] >= 1, f"Python получил заказы из Go по сети compose ({status}, {body})")
+    skus = {s["sku"]: s for s in body.get("by_sku", [])}
+    check(
+        status == 200 and body["count"] >= 2 and skus.get("XYZ-777", {}).get("total_cents") == 30,
+        f"Python получил заказы из Go по сети compose и сгруппировал по SKU ({status})",
+    )
 
     bad = {**order, "items": [{"sku": "bad", "quantity": 0, "price": 1}]}
     go_status, go_body = call("POST", f"{args.go}/api/v1/orders/validate", bad)

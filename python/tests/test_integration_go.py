@@ -95,6 +95,36 @@ def test_go_token_verified_by_python(go_api: str, py_client: TestClient) -> None
     assert summary.json()["total_cents"] == 44998
 
 
+def test_complex_json_roundtrip(go_api: str, py_client: TestClient) -> None:
+    """Вложенный заказ проходит Python → Go → Python без искажений (средней сложности №5)."""
+    token = httpx.post(f"{go_api}/auth/login", json={"username": USER, "password": PASSWORD}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    order = valid_order(
+        comment='Кириллица, «кавычки», эмодзи 📦 и "экранирование"',
+        items=[
+            {"sku": "ABC-123", "quantity": 3, "price": 0.1},
+            {"sku": "XYZ-999999", "quantity": 100, "price": 999999.99},
+        ],
+    )
+
+    created = py_client.post("/api/v1/orders", json=order, headers=headers)
+    assert created.status_code == 201, created.text
+    via_python = created.json()
+
+    # Тот же заказ, запрошенный напрямую у Go, совпадает с тем, что вернул Python.
+    via_go = httpx.get(f"{go_api}/api/v1/orders/{via_python['id']}", headers=headers).json()
+    for key in ("customer", "items", "delivery", "comment", "total_cents", "owner"):
+        assert via_python[key] == via_go[key], key
+    assert via_go["items"] == order["items"]
+    assert via_go["comment"] == order["comment"]
+    assert via_go["total_cents"] == 3 * 10 + 100 * 99999999  # копейки без ошибок float
+
+    summary = py_client.get("/api/v1/orders/summary", headers=headers).json()
+    xyz = next(s for s in summary["by_sku"] if s["sku"] == "XYZ-999999")
+    assert xyz == {"sku": "XYZ-999999", "quantity": 100, "total_cents": 9999999900}
+    assert summary["last_order"]["id"] == via_python["id"]
+
+
 def test_same_validation_rules(go_api: str, py_client: TestClient) -> None:
     """Один и тот же некорректный заказ даёт одинаковые поля и правила в Go и Python."""
     bad = valid_order(
