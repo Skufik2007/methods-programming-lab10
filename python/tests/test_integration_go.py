@@ -15,6 +15,7 @@ import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -125,17 +126,42 @@ def test_complex_json_roundtrip(go_api: str, py_client: TestClient) -> None:
     assert summary["last_order"]["id"] == via_python["id"]
 
 
-def test_same_validation_rules(go_api: str, py_client: TestClient) -> None:
-    """Один и тот же некорректный заказ даёт одинаковые поля и правила в Go и Python."""
-    bad = valid_order(
-        customer={"name": "И", "email": "nope"},
-        items=[{"sku": "bad", "quantity": 0, "price": 1.999}],
-    )
-    go = httpx.post(f"{go_api}/api/v1/orders/validate", json=bad)
-    py = py_client.post("/api/v1/orders/validate", json=bad)
-    assert go.status_code == py.status_code == 422
+def _customer(**kw: str) -> dict[str, str]:
+    return {"name": "Иван Петров", "email": "ivan@example.com", **kw}
 
-    def rules(resp: httpx.Response) -> set[tuple[str, str]]:
-        return {(d["field"], d["rule"]) for d in resp.json()["error"]["details"]}
 
-    assert rules(go) == rules(py)
+def _item(**kw: Any) -> list[dict[str, Any]]:
+    return [{"sku": "ABC-123", "quantity": 1, "price": 10, **kw}]
+
+
+# Пограничные случаи, на которых сервисы раньше расходились, плюс общие проверки.
+PARITY_CASES = {
+    "много ошибок сразу": valid_order(
+        customer={"name": "И", "email": "nope"}, items=[{"sku": "bad", "quantity": 0, "price": 1.999}]
+    ),
+    "цена больше миллиона": valid_order(items=_item(price=1_000_001)),
+    "email с пустой меткой домена": valid_order(customer=_customer(email="ivan@ex..com")),
+    "email без точки в домене": valid_order(customer=_customer(email="ivan@localhost")),
+    "email с пробелом": valid_order(customer=_customer(email="iv an@example.com")),
+    "корректный сложный email": valid_order(customer=_customer(email="o'neil+tag@sub.example.co")),
+    "пустой телефон": valid_order(customer=_customer(phone="")),
+    "имя из пробелов": valid_order(customer=_customer(name="    ")),
+    "адрес из пробелов": valid_order(delivery={"address": "       ", "date": valid_order()["delivery"]["date"]}),
+    "quantity дробным числом": valid_order(items=_item(quantity=2.5)),
+    "цена строкой": valid_order(items=_item(price="10")),
+    "повтор SKU": valid_order(items=[*_item(), *_item()]),
+}
+
+
+@pytest.mark.parametrize("case", PARITY_CASES)
+def test_same_validation_rules(go_api: str, py_client: TestClient, case: str) -> None:
+    """Один и тот же заказ даёт одинаковый статус, код ошибки и набор (поле, правило) в Go и Python."""
+    body = PARITY_CASES[case]
+    go = httpx.post(f"{go_api}/api/v1/orders/validate", json=body)
+    py = py_client.post("/api/v1/orders/validate", json=body)
+
+    def outcome(resp: httpx.Response) -> tuple[int, str | None, set[tuple[str, str]]]:
+        err = resp.json().get("error", {})
+        return resp.status_code, err.get("code"), {(d["field"], d["rule"]) for d in err.get("details", [])}
+
+    assert outcome(go) == outcome(py)
