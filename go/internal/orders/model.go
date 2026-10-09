@@ -17,19 +17,19 @@ type CreateRequest struct {
 }
 
 type Customer struct {
-	Name  string `json:"name" binding:"required,min=2,max=100"`
-	Email string `json:"email" binding:"required,email,max=254"`
+	Name  string `json:"name" binding:"required,notblank,min=2,max=100"`
+	Email string `json:"email" binding:"required,max=254,email"`
 	Phone string `json:"phone" binding:"omitempty,e164"`
 }
 
 type Item struct {
 	SKU      string  `json:"sku" binding:"required,sku"`
 	Quantity int     `json:"quantity" binding:"min=1,max=100"`
-	Price    float64 `json:"price" binding:"gt=0,lte=1000000,money"`
+	Price    float64 `json:"price" binding:"gt=0,max=1000000,money"`
 }
 
 type Delivery struct {
-	Address string `json:"address" binding:"required,min=5,max=300"`
+	Address string `json:"address" binding:"required,notblank,min=5,max=300"`
 	// Дата в формате YYYY-MM-DD: не раньше сегодняшнего дня и не дальше MaxDeliveryDays.
 	Date string `json:"date" binding:"required,delivery_date"`
 }

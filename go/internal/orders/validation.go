@@ -17,6 +17,14 @@ const MaxDeliveryDays = 90
 
 var skuPattern = regexp.MustCompile(`^[A-Z]{3}-\d{3,6}$`)
 
+// EmailPattern — шаблон email из стандарта HTML (WHATWG), но с обязательной точкой
+// в домене. Встроенное правило email валидатора заменено им, а Python-сервис
+// использует тот же шаблон (python/app/models.py) — так оба сервиса гарантированно
+// принимают и отклоняют одни и те же адреса.
+const EmailPattern = `^[a-zA-Z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$`
+
+var emailPattern = regexp.MustCompile(EmailPattern)
+
 // Now подменяется в тестах, чтобы проверка даты не зависела от текущего дня.
 var Now = time.Now
 
@@ -33,6 +41,8 @@ func RegisterValidators(v *validator.Validate) error {
 
 	rules := map[string]validator.Func{
 		"sku":           func(fl validator.FieldLevel) bool { return skuPattern.MatchString(fl.Field().String()) },
+		"email":         func(fl validator.FieldLevel) bool { return emailPattern.MatchString(fl.Field().String()) },
+		"notblank":      func(fl validator.FieldLevel) bool { return strings.TrimSpace(fl.Field().String()) != "" },
 		"money":         func(fl validator.FieldLevel) bool { return isMoney(fl.Field().Float()) },
 		"delivery_date": func(fl validator.FieldLevel) bool { return validDeliveryDate(fl.Field().String()) },
 	}
@@ -58,7 +68,9 @@ func validDeliveryDate(s string) bool {
 	if err != nil {
 		return false
 	}
-	now := Now()
+	// «Сегодня» — по UTC, как и в Python-сервисе. По местному времени сервисы
+	// расходились бы ночью: в 01:00 по Москве в UTC ещё вчерашний день.
+	now := Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	return !d.Before(today) && !d.After(today.AddDate(0, 0, MaxDeliveryDays))
 }
@@ -139,10 +151,10 @@ func message(fe validator.FieldError) string {
 		return "значение должно быть не больше " + fe.Param()
 	case "gt":
 		return "значение должно быть больше " + fe.Param()
-	case "lte":
-		return "значение должно быть не больше " + fe.Param()
 	case "email":
 		return "некорректный email"
+	case "notblank":
+		return "не может состоять только из пробелов"
 	case "e164":
 		return "телефон в формате E.164, например +79991234567"
 	case "sku":

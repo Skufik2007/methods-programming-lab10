@@ -54,6 +54,11 @@ func TestValidationRules(t *testing.T) {
 		{"нет позиций", func(r *CreateRequest) { r.Items = nil }, "items", "required"},
 		{"короткое имя", func(r *CreateRequest) { r.Customer.Name = "И" }, "customer.name", "min"},
 		{"плохой email", func(r *CreateRequest) { r.Customer.Email = "ivan@" }, "customer.email", "email"},
+		{"email с пустой меткой домена", func(r *CreateRequest) { r.Customer.Email = "ivan@ex..com" }, "customer.email", "email"},
+		{"email без точки в домене", func(r *CreateRequest) { r.Customer.Email = "ivan@localhost" }, "customer.email", "email"},
+		{"имя из пробелов", func(r *CreateRequest) { r.Customer.Name = "    " }, "customer.name", "notblank"},
+		{"адрес из пробелов", func(r *CreateRequest) { r.Delivery.Address = "\t      " }, "delivery.address", "notblank"},
+		{"цена больше миллиона", func(r *CreateRequest) { r.Items[0].Price = 1_000_000.01 }, "items[0].price", "max"},
 		{"плохой телефон", func(r *CreateRequest) { r.Customer.Phone = "8-999-123" }, "customer.phone", "e164"},
 		{"SKU строчными", func(r *CreateRequest) { r.Items[0].SKU = "abc-123" }, "items[0].sku", "sku"},
 		{"SKU без цифр", func(r *CreateRequest) { r.Items[1].SKU = "ABC-" }, "items[1].sku", "sku"},
@@ -97,6 +102,31 @@ func TestDeliveryDateBoundaries(t *testing.T) {
 	} {
 		if got := validDeliveryDate(date); got != want {
 			t.Errorf("validDeliveryDate(%s) = %v, want %v", date, got, want)
+		}
+	}
+}
+
+// «Сегодня» берётся по UTC: в 01:00 по Москве (22:00 UTC) сегодняшней по UTC
+// ещё считается вчерашняя дата — так же, как в Python-сервисе.
+func TestDeliveryDateUsesUTC(t *testing.T) {
+	orig := Now
+	msk := time.FixedZone("MSK", 3*60*60)
+	Now = func() time.Time { return time.Date(2026, 10, 10, 1, 0, 0, 0, msk) }
+	t.Cleanup(func() { Now = orig })
+
+	if !validDeliveryDate("2026-10-09") {
+		t.Fatal("по UTC сейчас 2026-10-09, эта дата должна считаться сегодняшней")
+	}
+}
+
+func TestValidEmails(t *testing.T) {
+	v := newValidator(t)
+	for _, email := range []string{"ivan@example.com", "i.van+tag@sub.example.co", "a@b.cd", "o'neil@example.org"} {
+		req := validRequest()
+		req.Customer.Email = email
+		fixedNow(t)
+		if err := v.Struct(req); err != nil {
+			t.Errorf("%s отклонён: %v", email, Describe(err))
 		}
 	}
 }
