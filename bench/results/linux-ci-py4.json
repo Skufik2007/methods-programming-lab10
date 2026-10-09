@@ -1,5 +1,5 @@
 {
-  "started_at": "2026-10-09T12:10:40+00:00",
+  "started_at": "2026-10-09T21:55:47+00:00",
   "environment": {
     "ОС": "Linux 6.17.0-1022-azure",
     "CPU": "4 логических ядер",
@@ -19,105 +19,105 @@
       "scenario": "GET /ping",
       "concurrency": 16,
       "service": "Gin (Go)",
-      "rps": 26566.66027075736,
-      "p50_ms": 0.492,
-      "p99_ms": 2.63,
+      "rps": 27465.958411035135,
+      "p50_ms": 0.48,
+      "p99_ms": 2.515,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 25.328125
+      "peak_rss_mb": 27.484375
     },
     {
       "scenario": "GET /ping",
       "concurrency": 16,
       "service": "FastAPI (Python, 4 воркера)",
-      "rps": 8205.552885357483,
-      "p50_ms": 1.53,
-      "p99_ms": 6.15,
+      "rps": 9284.207840697278,
+      "p50_ms": 1.559,
+      "p99_ms": 4.653,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 295.96484375
+      "peak_rss_mb": 297.62109375
     },
     {
       "scenario": "GET /ping",
       "concurrency": 64,
       "service": "Gin (Go)",
-      "rps": 30319.561192218567,
-      "p50_ms": 1.617,
-      "p99_ms": 8.41,
+      "rps": 31781.83089097278,
+      "p50_ms": 1.518,
+      "p99_ms": 8.094,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 26.99609375
+      "peak_rss_mb": 27.4375
     },
     {
       "scenario": "GET /ping",
       "concurrency": 64,
       "service": "FastAPI (Python, 4 воркера)",
-      "rps": 9647.843157596359,
-      "p50_ms": 5.844,
-      "p99_ms": 19.094,
+      "rps": 9831.007928777079,
+      "p50_ms": 5.488,
+      "p99_ms": 19.454,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 296.82421875
+      "peak_rss_mb": 298.203125
     },
     {
       "scenario": "POST /api/v1/orders/validate",
       "concurrency": 16,
       "service": "Gin (Go)",
-      "rps": 18771.264540594602,
-      "p50_ms": 0.739,
-      "p99_ms": 2.929,
+      "rps": 19399.81030275322,
+      "p50_ms": 0.716,
+      "p99_ms": 2.834,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 26.94140625
+      "peak_rss_mb": 27.25
     },
     {
       "scenario": "POST /api/v1/orders/validate",
       "concurrency": 16,
       "service": "FastAPI (Python, 4 воркера)",
-      "rps": 5276.657460859193,
-      "p50_ms": 1.185,
-      "p99_ms": 11.779,
+      "rps": 6359.953681087138,
+      "p50_ms": 2.291,
+      "p99_ms": 6.425,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 297.015625
+      "peak_rss_mb": 298.4453125
     },
     {
       "scenario": "POST /api/v1/orders/validate",
       "concurrency": 64,
       "service": "Gin (Go)",
-      "rps": 19480.67215439111,
-      "p50_ms": 2.566,
-      "p99_ms": 12.437,
+      "rps": 20988.374809436675,
+      "p50_ms": 2.41,
+      "p99_ms": 11.496,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 27.984375
+      "peak_rss_mb": 27.74609375
     },
     {
       "scenario": "POST /api/v1/orders/validate",
       "concurrency": 64,
       "service": "FastAPI (Python, 4 воркера)",
-      "rps": 6503.708408043539,
-      "p50_ms": 9.086,
-      "p99_ms": 22.918,
+      "rps": 6669.652749113993,
+      "p50_ms": 9.147,
+      "p99_ms": 21.884,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 297.46875
+      "peak_rss_mb": 298.890625
     }
   ],
   "memory": {
     "Gin (Go)": {
-      "idle": 18.44921875,
-      "idle_uss": 16.984375,
-      "peak": 27.984375,
-      "after": 26.40234375,
-      "after_uss": 24.9375
+      "idle": 20.25390625,
+      "idle_uss": 18.7890625,
+      "peak": 27.74609375,
+      "after": 27.34375,
+      "after_uss": 25.87890625
     },
     "FastAPI (Python, 4 воркера)": {
-      "idle": 295.23046875,
-      "idle_uss": 181.55078125,
-      "peak": 297.46875,
-      "after": 297.46875,
-      "after_uss": 183.15234375
+      "idle": 296.70703125,
+      "idle_uss": 182.2890625,
+      "peak": 298.890625,
+      "after": 298.890625,
+      "after_uss": 183.89453125
     }
   }
 }

@@ -1,5 +1,5 @@
 {
-  "started_at": "2026-10-09T11:59:01+00:00",
+  "started_at": "2026-10-09T22:00:11+00:00",
   "environment": {
     "ОС": "Windows 11",
     "CPU": "12 логических ядер",
@@ -20,149 +20,149 @@
       "scenario": "GET /ping",
       "concurrency": 1,
       "service": "Gin (Go)",
-      "rps": 4952.113108239198,
+      "rps": 6532.1204252458,
       "p50_ms": 0,
-      "p99_ms": 0.676,
+      "p99_ms": 0.61,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 23.55859375
+      "peak_rss_mb": 23.890625
     },
     {
       "scenario": "GET /ping",
       "concurrency": 1,
       "service": "FastAPI (Python)",
-      "rps": 2483.6065767198047,
-      "p50_ms": 0.524,
-      "p99_ms": 1.044,
+      "rps": 2691.630696429195,
+      "p50_ms": 0.521,
+      "p99_ms": 0.97,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 67.3125
+      "peak_rss_mb": 67.171875
     },
     {
       "scenario": "GET /ping",
       "concurrency": 16,
       "service": "Gin (Go)",
-      "rps": 25575.756475316888,
-      "p50_ms": 0.566,
-      "p99_ms": 2.176,
+      "rps": 33111.53596594873,
+      "p50_ms": 0.541,
+      "p99_ms": 1.599,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 25.85546875
+      "peak_rss_mb": 26.09765625
     },
     {
       "scenario": "GET /ping",
       "concurrency": 16,
       "service": "FastAPI (Python)",
-      "rps": 3118.5809898999896,
-      "p50_ms": 5.041,
-      "p99_ms": 7.142,
+      "rps": 3709.0415942435993,
+      "p50_ms": 4.236,
+      "p99_ms": 5.95,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 68.53515625
+      "peak_rss_mb": 68.1875
     },
     {
       "scenario": "GET /ping",
       "concurrency": 64,
       "service": "Gin (Go)",
-      "rps": 27610.81213761971,
-      "p50_ms": 1.839,
-      "p99_ms": 10.279,
+      "rps": 37927.62233388893,
+      "p50_ms": 1.411,
+      "p99_ms": 6.763,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 28.58203125
+      "peak_rss_mb": 28.609375
     },
     {
       "scenario": "GET /ping",
       "concurrency": 64,
       "service": "FastAPI (Python)",
-      "rps": 2862.2273280062436,
-      "p50_ms": 21.71,
-      "p99_ms": 33.451,
+      "rps": 3583.2282257043585,
+      "p50_ms": 17.371,
+      "p99_ms": 22.834,
+      "errors": 0,
+      "non_2xx": 0,
+      "peak_rss_mb": 73.01953125
+    },
+    {
+      "scenario": "POST /api/v1/orders/validate",
+      "concurrency": 1,
+      "service": "Gin (Go)",
+      "rps": 5267.851162895992,
+      "p50_ms": 0,
+      "p99_ms": 0.628,
+      "errors": 0,
+      "non_2xx": 0,
+      "peak_rss_mb": 28.03125
+    },
+    {
+      "scenario": "POST /api/v1/orders/validate",
+      "concurrency": 1,
+      "service": "FastAPI (Python)",
+      "rps": 2128.424660376478,
+      "p50_ms": 0.526,
+      "p99_ms": 1.046,
       "errors": 0,
       "non_2xx": 0,
       "peak_rss_mb": 73.18359375
     },
     {
       "scenario": "POST /api/v1/orders/validate",
-      "concurrency": 1,
-      "service": "Gin (Go)",
-      "rps": 4541.15196227982,
-      "p50_ms": 0,
-      "p99_ms": 0.647,
-      "errors": 0,
-      "non_2xx": 0,
-      "peak_rss_mb": 27.28515625
-    },
-    {
-      "scenario": "POST /api/v1/orders/validate",
-      "concurrency": 1,
-      "service": "FastAPI (Python)",
-      "rps": 1868.860732498214,
-      "p50_ms": 0.531,
-      "p99_ms": 1.193,
-      "errors": 0,
-      "non_2xx": 0,
-      "peak_rss_mb": 73.296875
-    },
-    {
-      "scenario": "POST /api/v1/orders/validate",
       "concurrency": 16,
       "service": "Gin (Go)",
-      "rps": 17830.234254525443,
-      "p50_ms": 0.721,
-      "p99_ms": 3.209,
+      "rps": 25533.56092850607,
+      "p50_ms": 0.583,
+      "p99_ms": 1.99,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 28.55078125
+      "peak_rss_mb": 28.53125
     },
     {
       "scenario": "POST /api/v1/orders/validate",
       "concurrency": 16,
       "service": "FastAPI (Python)",
-      "rps": 1956.186926055495,
-      "p50_ms": 7.85,
-      "p99_ms": 12.966,
+      "rps": 2655.910634820379,
+      "p50_ms": 5.888,
+      "p99_ms": 8.221,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 73.44921875
+      "peak_rss_mb": 73.4140625
     },
     {
       "scenario": "POST /api/v1/orders/validate",
       "concurrency": 64,
       "service": "Gin (Go)",
-      "rps": 20974.56758699497,
-      "p50_ms": 2.24,
-      "p99_ms": 13.558,
+      "rps": 28903.55953501665,
+      "p50_ms": 1.717,
+      "p99_ms": 9.529,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 31.59765625
+      "peak_rss_mb": 31.84375
     },
     {
       "scenario": "POST /api/v1/orders/validate",
       "concurrency": 64,
       "service": "FastAPI (Python)",
-      "rps": 2018.3295255618066,
-      "p50_ms": 30.193,
-      "p99_ms": 70.371,
+      "rps": 2608.63744939475,
+      "p50_ms": 24.059,
+      "p99_ms": 30.719,
       "errors": 0,
       "non_2xx": 0,
-      "peak_rss_mb": 77.3671875
+      "peak_rss_mb": 78.1328125
     }
   ],
   "memory": {
     "Gin (Go)": {
-      "idle": 16.765625,
-      "idle_uss": 4.48046875,
-      "peak": 31.59765625,
-      "after": 30.69921875,
-      "after_uss": 16.640625
+      "idle": 16.26953125,
+      "idle_uss": 4.0,
+      "peak": 31.84375,
+      "after": 30.3203125,
+      "after_uss": 16.28515625
     },
     "FastAPI (Python)": {
-      "idle": 67.1484375,
-      "idle_uss": 42.875,
-      "peak": 77.3671875,
-      "after": 73.93359375,
-      "after_uss": 49.47265625
+      "idle": 67.0078125,
+      "idle_uss": 42.703125,
+      "peak": 78.1328125,
+      "after": 73.29296875,
+      "after_uss": 48.796875
     }
   }
 }

@@ -1,6 +1,6 @@
 # Результаты нагрузочного сравнения Gin и FastAPI
 
-- Дата: 2026-10-09T12:09:16+00:00
+- Дата: 2026-10-09T21:54:24+00:00
 - Окружение: ОС: Linux 6.17.0-1022-azure, CPU: 4 логических ядер, Go: go1.27.1, Python: 3.12.15
 - Параметры: {'duration_s': 5.0, 'concurrency': [1, 16, 64], 'py_workers': 1}
 
@@ -8,25 +8,25 @@
 
 | Сценарий | Параллельность | Сервис | RPS | p50, мс | p99, мс | Ошибки | Пик RSS, МБ |
 |---|---:|---|---:|---:|---:|---:|---:|
-| GET /ping | 1 | Gin (Go) | 5 720 | 0.17 | 0.23 | 0 | 26.7 |
-| GET /ping | 1 | FastAPI (Python) | 3 246 | 0.30 | 0.37 | 0 | 64.5 |
-| GET /ping | 16 | Gin (Go) | 27 270 | 0.47 | 2.64 | 0 | 27.4 |
-| GET /ping | 16 | FastAPI (Python) | 4 296 | 3.46 | 7.19 | 0 | 64.6 |
-| GET /ping | 64 | Gin (Go) | 30 808 | 1.62 | 8.13 | 0 | 27.5 |
-| GET /ping | 64 | FastAPI (Python) | 4 256 | 14.72 | 28.64 | 0 | 65.3 |
-| POST /api/v1/orders/validate | 1 | Gin (Go) | 4 361 | 0.22 | 0.29 | 0 | 27.1 |
-| POST /api/v1/orders/validate | 1 | FastAPI (Python) | 2 406 | 0.41 | 0.52 | 0 | 65.3 |
-| POST /api/v1/orders/validate | 16 | Gin (Go) | 18 735 | 0.74 | 2.91 | 0 | 27.2 |
-| POST /api/v1/orders/validate | 16 | FastAPI (Python) | 2 873 | 5.14 | 10.93 | 0 | 65.3 |
-| POST /api/v1/orders/validate | 64 | Gin (Go) | 19 910 | 2.54 | 12.08 | 0 | 27.9 |
-| POST /api/v1/orders/validate | 64 | FastAPI (Python) | 2 853 | 22.12 | 24.94 | 0 | 65.5 |
+| GET /ping | 1 | Gin (Go) | 5 893 | 0.17 | 0.22 | 0 | 24.8 |
+| GET /ping | 1 | FastAPI (Python) | 3 248 | 0.30 | 0.40 | 0 | 64.9 |
+| GET /ping | 16 | Gin (Go) | 28 068 | 0.47 | 2.52 | 0 | 26.9 |
+| GET /ping | 16 | FastAPI (Python) | 4 267 | 3.48 | 7.26 | 0 | 65.0 |
+| GET /ping | 64 | Gin (Go) | 31 768 | 1.54 | 8.04 | 0 | 27.3 |
+| GET /ping | 64 | FastAPI (Python) | 4 308 | 14.51 | 28.47 | 0 | 65.7 |
+| POST /api/v1/orders/validate | 1 | Gin (Go) | 4 539 | 0.21 | 0.28 | 0 | 26.8 |
+| POST /api/v1/orders/validate | 1 | FastAPI (Python) | 2 397 | 0.41 | 0.55 | 0 | 65.7 |
+| POST /api/v1/orders/validate | 16 | Gin (Go) | 19 589 | 0.71 | 2.80 | 0 | 26.7 |
+| POST /api/v1/orders/validate | 16 | FastAPI (Python) | 2 898 | 5.12 | 10.69 | 0 | 65.7 |
+| POST /api/v1/orders/validate | 64 | Gin (Go) | 20 728 | 2.42 | 11.78 | 0 | 27.7 |
+| POST /api/v1/orders/validate | 64 | FastAPI (Python) | 2 868 | 21.95 | 25.53 | 0 | 65.9 |
 
 ## Память (RSS процесса вместе с дочерними)
 
 | Сервис | RSS в простое, МБ | USS в простое, МБ | Пик RSS под нагрузкой, МБ | RSS после нагрузки, МБ | USS после нагрузки, МБ |
 |---|---:|---:|---:|---:|---:|
-| Gin (Go) | 20.5 | 19.0 | 27.9 | 26.9 | 25.4 |
-| FastAPI (Python) | 64.4 | 51.7 | 65.5 | 65.5 | 52.7 |
+| Gin (Go) | 20.3 | 18.8 | 27.7 | 27.3 | 25.8 |
+| FastAPI (Python) | 64.8 | 51.9 | 65.9 | 65.9 | 53.0 |
 
 RSS — вся резидентная память процесса, включая разделяемые страницы системных библиотек;
 USS — только собственная память процесса. Пик снимается каждые 50 мс по RSS.
