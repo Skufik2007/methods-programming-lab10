@@ -56,7 +56,7 @@ func Run(ctx context.Context, srv *http.Server, ln net.Listener, opt Options) er
 	}
 
 	log.Info("получен сигнал остановки, начинаем graceful shutdown",
-		"drain_delay", opt.DrainDelay, "timeout", opt.ShutdownTimeout)
+		"drain_delay", opt.DrainDelay.String(), "timeout", opt.ShutdownTimeout.String())
 	if opt.Ready != nil {
 		opt.Ready.Store(false)
 	}
@@ -75,6 +75,6 @@ func Run(ctx context.Context, srv *http.Server, ln net.Listener, opt Options) er
 	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve: %w", err)
 	}
-	log.Info("сервер остановлен", "took", time.Since(start).Round(time.Millisecond))
+	log.Info("сервер остановлен", "took", time.Since(start).Round(time.Millisecond).String())
 	return nil
 }
