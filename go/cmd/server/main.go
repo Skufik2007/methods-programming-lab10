@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -68,6 +69,7 @@ func run(cfg config, log *slog.Logger) error {
 	ready := &atomic.Bool{}
 	router, err := api.NewRouter(api.Deps{
 		Issuer: issuer, Users: users, Store: orders.NewStore(), Logger: log, Ready: ready,
+		Limiter: auth.NewLoginLimiter(cfg.LoginMaxFailures, cfg.LoginLockout),
 	})
 	if err != nil {
 		return err
@@ -107,6 +109,9 @@ type config struct {
 	Users           []auth.UserSpec
 	ShutdownTimeout time.Duration
 	DrainDelay      time.Duration
+
+	LoginMaxFailures int
+	LoginLockout     time.Duration
 }
 
 func loadConfig() (config, error) {
@@ -124,6 +129,12 @@ func loadConfig() (config, error) {
 	c.TokenTTL = duration("JWT_TTL", "15m", &errs)
 	c.ShutdownTimeout = duration("SHUTDOWN_TIMEOUT", "20s", &errs)
 	c.DrainDelay = duration("DRAIN_DELAY", "0s", &errs)
+	c.LoginLockout = duration("LOGIN_LOCKOUT", api.DefaultLoginLockout.String(), &errs)
+	maxFailures, err := strconv.Atoi(env("LOGIN_MAX_FAILURES", strconv.Itoa(api.DefaultLoginMaxFailures)))
+	if err != nil || maxFailures < 1 {
+		errs = append(errs, errors.New("LOGIN_MAX_FAILURES: ожидается целое число ≥ 1"))
+	}
+	c.LoginMaxFailures = maxFailures
 
 	// Учётные записи: "имя:пароль:роль;имя2:пароль2:роль2".
 	// Значение по умолчанию — демонстрационный пользователь для локального запуска.

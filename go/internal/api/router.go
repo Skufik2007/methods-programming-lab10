@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -18,12 +19,20 @@ import (
 // MaxBodyBytes ограничивает размер тела запроса.
 const MaxBodyBytes = 1 << 20
 
+// Ограничение подбора паролей по умолчанию: 5 неудач — блокировка на 5 минут.
+const (
+	DefaultLoginMaxFailures = 5
+	DefaultLoginLockout     = 5 * time.Minute
+)
+
 // Deps — зависимости обработчиков.
 type Deps struct {
 	Issuer *auth.Issuer
 	Users  *auth.Users
 	Store  *orders.Store
 	Logger *slog.Logger
+	// Limiter ограничивает подбор паролей на /auth/login; nil — значения по умолчанию.
+	Limiter *auth.LoginLimiter
 	// Ready сбрасывается в false в начале graceful shutdown, чтобы /health/ready
 	// сразу стал отдавать 503 и балансировщик перестал слать новые запросы.
 	Ready *atomic.Bool
@@ -50,10 +59,19 @@ func NewRouter(d Deps) (*gin.Engine, error) {
 	if err := configureBinding(); err != nil {
 		return nil, err
 	}
+	if d.Limiter == nil {
+		d.Limiter = auth.NewLoginLimiter(DefaultLoginMaxFailures, DefaultLoginLockout)
+	}
 	h := &handlers{Deps: d}
 
 	r := gin.New()
 	r.HandleMethodNotAllowed = true
+	// По умолчанию Gin доверяет X-Forwarded-For от любого клиента: подменив заголовок,
+	// можно было бы выдать себя за другой IP и обойти ограничение попыток входа.
+	// Прокси перед сервисом нет, поэтому IP клиента — адрес TCP-соединения.
+	if err := r.SetTrustedProxies(nil); err != nil {
+		return nil, err
+	}
 	r.Use(RequestID(), Logger(d.Logger), Recovery(d.Logger), LimitBody(MaxBodyBytes))
 
 	r.GET("/ping", h.ping)

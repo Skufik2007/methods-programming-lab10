@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -107,11 +109,21 @@ func (h *handlers) login(c *gin.Context) {
 	if !bindJSON(c, &req) {
 		return
 	}
+	limitKey := strings.ToLower(req.Username) + "|" + c.ClientIP()
+	if ok, retry := h.Limiter.Allow(limitKey); !ok {
+		secs := int(math.Ceil(retry.Seconds()))
+		c.Header("Retry-After", strconv.Itoa(secs))
+		fail(c, http.StatusTooManyRequests, "too_many_attempts",
+			fmt.Sprintf("слишком много неудачных попыток входа, повторите через %d с", secs))
+		return
+	}
 	role, err := h.Users.Authenticate(req.Username, req.Password)
 	if err != nil {
+		h.Limiter.Failure(limitKey)
 		fail(c, http.StatusUnauthorized, "invalid_credentials", err.Error())
 		return
 	}
+	h.Limiter.Success(limitKey)
 	token, exp, err := h.Issuer.Issue(req.Username, role)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "internal", "не удалось выпустить токен")

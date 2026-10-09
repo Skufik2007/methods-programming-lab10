@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -220,6 +221,41 @@ func TestLogin(t *testing.T) {
 	for _, c := range cases {
 		if w := e.do("POST", "/auth/login", "", c.body); w.Code != c.status {
 			t.Errorf("%v: %d, want %d", c.body, w.Code, c.status)
+		}
+	}
+}
+
+func TestLoginRateLimit(t *testing.T) {
+	e := newEnv(t)
+	wrong := map[string]string{"username": "alice", "password": "wrong-pass"}
+	for i := range DefaultLoginMaxFailures {
+		if w := e.do("POST", "/auth/login", "", wrong); w.Code != http.StatusUnauthorized {
+			t.Fatalf("попытка %d: %d", i+1, w.Code)
+		}
+	}
+	// После 5 неудач блокируется даже верный пароль — иначе перебор продолжался бы.
+	w := e.do("POST", "/auth/login", "", map[string]string{"username": "alice", "password": "alice-pass-1"})
+	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") != "300" {
+		t.Fatalf("status %d, Retry-After %q", w.Code, w.Header().Get("Retry-After"))
+	}
+	if decodeError(t, w).Code != "too_many_attempts" {
+		t.Fatalf("код ошибки: %s", w.Body)
+	}
+	// Блокировка не затрагивает других пользователей.
+	e.login("bob", "bob-pass-12")
+}
+
+func TestForwardedForIgnored(t *testing.T) {
+	e := newEnv(t)
+	// Подмена X-Forwarded-For не даёт сбросить счётчик, выдав себя за другой IP.
+	for i := range DefaultLoginMaxFailures + 1 {
+		req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"username":"alice","password":"wrong-pass"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("10.0.0.%d", i))
+		w := httptest.NewRecorder()
+		e.router.ServeHTTP(w, req)
+		if i == DefaultLoginMaxFailures && w.Code != http.StatusTooManyRequests {
+			t.Fatalf("попытка %d с подменённым IP: %d", i+1, w.Code)
 		}
 	}
 }
