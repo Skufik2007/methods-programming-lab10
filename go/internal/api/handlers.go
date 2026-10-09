@@ -59,6 +59,8 @@ func bindJSON(c *gin.Context, dst any) bool {
 		fail(c, http.StatusBadRequest, "invalid_json", fmt.Sprintf("синтаксическая ошибка JSON на позиции %d", syntaxErr.Offset))
 	case errors.As(err, &typeErr):
 		fail(c, http.StatusBadRequest, "invalid_type", fmt.Sprintf("поле %s: ожидается %s", typeErr.Field, typeErr.Type))
+	// У ошибки DisallowUnknownFields в encoding/json нет отдельного типа, поэтому её
+	// приходится узнавать по тексту. Формат текста закреплён тестом TestBadRequests.
 	case strings.HasPrefix(err.Error(), "json: unknown field"):
 		fail(c, http.StatusBadRequest, "unknown_field", "неизвестное поле "+strings.TrimPrefix(err.Error(), "json: unknown field "))
 	default:
@@ -160,10 +162,10 @@ func (h *handlers) getOrder(c *gin.Context) {
 	}
 	o, err := h.Store.Get(auth.CurrentUser(c).Subject, id)
 	switch {
-	case errors.Is(err, orders.ErrNotFound):
-		fail(c, http.StatusNotFound, "not_found", err.Error())
-	case errors.Is(err, orders.ErrForbidden):
-		fail(c, http.StatusForbidden, "forbidden", err.Error())
+	case errors.Is(err, orders.ErrNotFound), errors.Is(err, orders.ErrForbidden):
+		// Чужой заказ отвечает так же, как несуществующий: 403 подтвердил бы,
+		// что заказ с таким id существует у другого пользователя.
+		fail(c, http.StatusNotFound, "not_found", orders.ErrNotFound.Error())
 	default:
 		c.JSON(http.StatusOK, o)
 	}

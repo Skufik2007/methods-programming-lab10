@@ -140,7 +140,8 @@ func TestOrderFlow(t *testing.T) {
 	}
 
 	bob := e.login("bob", "bob-pass-12")
-	if w := e.do("GET", "/api/v1/orders/"+o.ID, bob, nil); w.Code != http.StatusForbidden {
+	// Чужой заказ неотличим от несуществующего, чтобы не раскрывать чужие id.
+	if w := e.do("GET", "/api/v1/orders/"+o.ID, bob, nil); w.Code != http.StatusNotFound {
 		t.Fatalf("чужой заказ: %d", w.Code)
 	}
 	if w := e.do("GET", "/api/v1/orders/00000000-0000-0000-0000-000000000000", alice, nil); w.Code != 404 {
