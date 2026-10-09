@@ -40,7 +40,7 @@ func main() {
 		os.Exit(probe(cfg.Addr))
 	}
 
-	log := newLogger(cfg.LogFormat)
+	log := newLogger(cfg.LogFormat, cfg.LogLevel)
 	if err := run(cfg, log); err != nil {
 		log.Error("сервис завершился с ошибкой", "error", err)
 		os.Exit(1)
@@ -99,6 +99,7 @@ func run(cfg config, log *slog.Logger) error {
 type config struct {
 	Addr            string
 	LogFormat       string
+	LogLevel        slog.Level
 	Issuer          string
 	Audience        string
 	TokenTTL        time.Duration
@@ -117,6 +118,9 @@ func loadConfig() (config, error) {
 		KeyFile:   os.Getenv("JWT_PRIVATE_KEY_FILE"),
 	}
 	var errs []error
+	if err := c.LogLevel.UnmarshalText([]byte(env("LOG_LEVEL", "info"))); err != nil {
+		errs = append(errs, errors.New("LOG_LEVEL: ожидается debug, info, warn или error"))
+	}
 	c.TokenTTL = duration("JWT_TTL", "15m", &errs)
 	c.ShutdownTimeout = duration("SHUTDOWN_TIMEOUT", "20s", &errs)
 	c.DrainDelay = duration("DRAIN_DELAY", "0s", &errs)
@@ -149,10 +153,11 @@ func duration(key, def string, errs *[]error) time.Duration {
 	return d
 }
 
-func newLogger(format string) *slog.Logger {
-	var h slog.Handler = slog.NewJSONHandler(os.Stdout, nil)
+func newLogger(format string, level slog.Level) *slog.Logger {
+	opts := &slog.HandlerOptions{Level: level}
+	var h slog.Handler = slog.NewJSONHandler(os.Stdout, opts)
 	if format == "text" {
-		h = slog.NewTextHandler(os.Stdout, nil)
+		h = slog.NewTextHandler(os.Stdout, opts)
 	}
 	return slog.New(h)
 }
