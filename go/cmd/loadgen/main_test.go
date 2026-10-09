@@ -37,10 +37,27 @@ func TestSummarize(t *testing.T) {
 		lat = append(lat, time.Duration(i)*time.Millisecond)
 	}
 	l := summarize(lat)
-	if l.P50 != 51 || l.P90 != 91 || l.P99 != 100 || l.Max != 100 || l.Mean != 50.5 {
+	// Nearest-rank: p50 из 1..100 — 50-е значение, а не 51-е.
+	if l.P50 != 50 || l.P90 != 90 || l.P99 != 99 || l.Max != 100 || l.Mean != 50.5 {
 		t.Fatalf("%+v", l)
 	}
 	if summarize(nil) != (Latency{}) {
 		t.Fatal("пустой список")
+	}
+	one := summarize([]time.Duration{7 * time.Millisecond})
+	if one.P50 != 7 || one.P99 != 7 {
+		t.Fatalf("один замер: %+v", one)
+	}
+}
+
+func TestRunBacksOffWhenServerDown(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	url := srv.URL
+	srv.Close() // соединения будут отклоняться
+
+	res := run(http.DefaultClient, http.MethodGet, url, nil, 2, 100*time.Millisecond)
+	// Без паузы за 100 мс набралось бы много тысяч ошибок; с паузой 10 мс — десятки.
+	if res.Errors == 0 || res.Errors > 50 {
+		t.Fatalf("ошибок %d: пауза после ошибки не работает", res.Errors)
 	}
 }

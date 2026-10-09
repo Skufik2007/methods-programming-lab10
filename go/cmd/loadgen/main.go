@@ -13,12 +13,16 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"slices"
 	"sync"
 	"time"
 )
+
+// errorBackoff — пауза воркера после ошибки соединения.
+const errorBackoff = 10 * time.Millisecond
 
 type Result struct {
 	Requests  int     `json:"requests"`
@@ -101,6 +105,9 @@ func run(client *http.Client, method, url string, body []byte, conc int, d time.
 				resp, err := client.Do(req)
 				if err != nil {
 					s.errors++
+					// Сервер недоступен: без паузы цикл крутился бы вхолостую, занимая CPU,
+					// который нужен самому тестируемому сервису на той же машине.
+					time.Sleep(errorBackoff)
 					continue
 				}
 				// Тело дочитывается, чтобы соединение вернулось в пул keep-alive.
@@ -135,7 +142,12 @@ func summarize(lat []time.Duration) Latency {
 	}
 	slices.Sort(lat)
 	ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
-	pct := func(p float64) float64 { return ms(lat[min(len(lat)-1, int(p*float64(len(lat))))]) }
+	// Перцентиль методом nearest-rank: наименьшее значение, не меньше которого p·n
+	// замеров, — элемент с номером ceil(p·n) (с единицы). Для 1..100 p50 = 50, p99 = 99.
+	pct := func(p float64) float64 {
+		rank := int(math.Ceil(p * float64(len(lat))))
+		return ms(lat[max(rank-1, 0)])
+	}
 	var sum time.Duration
 	for _, l := range lat {
 		sum += l
