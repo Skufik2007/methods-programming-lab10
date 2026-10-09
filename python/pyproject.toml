@@ -13,18 +13,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "psutil>=6"]
 
-[tool.ruff]
-line-length = 120
-target-version = "py311"
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "SIM", "ASYNC", "RUF"]
-# RUF001-003: в строках и комментариях намеренно используется кириллица.
-ignore = ["RUF001", "RUF002", "RUF003"]
-
-[tool.ruff.lint.flake8-bugbear]
-# Depends(...) в значениях по умолчанию — стандартная идиома FastAPI.
-extend-immutable-calls = ["fastapi.Depends"]
+# Настройки ruff — в ruff.toml в корне репозитория (общие для python/ и bench/).
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
