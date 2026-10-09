@@ -73,21 +73,31 @@ class BodyLimitMiddleware:
             await self._reject(send)
             return
 
+        # Тело без Content-Length (chunked) считается по мере чтения. Исключение отсюда
+        # бросать нельзя: FastAPI перехватывает любые ошибки чтения тела и превращает их
+        # в 400 «There was an error parsing the body». Поэтому 413 отправляется здесь же,
+        # приложению сообщается, что клиент отключился, а его собственный ответ отбрасывается.
         received = 0
+        rejected = False
 
         async def limited_receive() -> Message:
-            nonlocal received
+            nonlocal received, rejected
+            if rejected:
+                return {"type": "http.disconnect"}
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
                 if received > self.max_bytes:
-                    raise _BodyTooLarge
+                    rejected = True
+                    await self._reject(send)
+                    return {"type": "http.disconnect"}
             return message
 
-        try:
-            await self.app(scope, limited_receive, send)
-        except _BodyTooLarge:
-            await self._reject(send)
+        async def guarded_send(message: Message) -> None:
+            if not rejected:  # после 413 приложение уже не может ответить клиенту
+                await send(message)
+
+        await self.app(scope, limited_receive, guarded_send)
 
     async def _reject(self, send: Send) -> None:
         body = json.dumps(
@@ -102,7 +112,3 @@ class BodyLimitMiddleware:
             }
         )
         await send({"type": "http.response.body", "body": body})
-
-
-class _BodyTooLarge(Exception):
-    pass

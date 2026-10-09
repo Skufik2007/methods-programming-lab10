@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -102,6 +104,25 @@ def test_body_too_large(client: TestClient) -> None:
     r = client.post(URL, json=valid_order(comment="x" * (1 << 20)))
     assert r.status_code == 413
     assert r.json()["error"]["code"] == "body_too_large"
+
+
+def test_body_too_large_without_content_length(client: TestClient) -> None:
+    # Тело передаётся частями (chunked), размер заранее неизвестен.
+    def chunks() -> Iterator[bytes]:
+        yield b'{"comment": "'
+        for _ in range(300):
+            yield b"x" * 4096
+        yield b'"}'
+
+    r = client.post(URL, content=chunks(), headers={"Content-Type": "application/json"})
+    assert r.status_code == 413, r.text
+    assert r.json()["error"]["code"] == "body_too_large"
+
+
+def test_chunked_body_under_limit(client: TestClient) -> None:
+    body = json.dumps(valid_order()).encode()
+    r = client.post(URL, content=iter([body[:10], body[10:]]), headers={"Content-Type": "application/json"})
+    assert r.status_code == 200, r.text
 
 
 def test_delivery_window(monkeypatch: pytest.MonkeyPatch) -> None:
