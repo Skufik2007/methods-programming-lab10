@@ -1,14 +1,17 @@
 # syntax=docker/dockerfile:1
 
+# Базовый образ закреплён по digest — сборка воспроизводима (см. go/Dockerfile).
+ARG PYTHON_IMAGE=python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+
 # ---- сборка: зависимости в отдельном виртуальном окружении ----
-FROM python:3.12-slim AS build
+FROM ${PYTHON_IMAGE} AS build
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN python -m venv /venv
 COPY requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip /venv/bin/pip install -r /tmp/requirements.txt
 
 # ---- финальный образ: только venv и код, без pip-кеша и инструментов сборки ----
-FROM python:3.12-slim
+FROM ${PYTHON_IMAGE}
 ENV PATH=/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
