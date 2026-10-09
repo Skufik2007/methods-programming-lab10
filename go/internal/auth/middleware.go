@@ -31,9 +31,20 @@ func Required(issuer *Issuer) gin.HandlerFunc {
 }
 
 // CurrentUser возвращает claims, сохранённые middleware Required.
+// Вызывается только в обработчиках за Required, иначе паникует (ошибка маршрутизации).
 func CurrentUser(c *gin.Context) *Claims {
 	claims, _ := c.MustGet(claimsKey).(*Claims)
 	return claims
+}
+
+// UserFromContext — то же без паники, для middleware, работающих на всех маршрутах.
+func UserFromContext(c *gin.Context) (*Claims, bool) {
+	v, ok := c.Get(claimsKey)
+	if !ok {
+		return nil, false
+	}
+	claims, ok := v.(*Claims)
+	return claims, ok
 }
 
 func abort(c *gin.Context, code, msg string) {
