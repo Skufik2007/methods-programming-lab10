@@ -21,12 +21,12 @@ import (
 )
 
 type testEnv struct {
-	t      *testing.T
+	t      testing.TB
 	router *gin.Engine
 	ready  *atomic.Bool
 }
 
-func newEnv(t *testing.T) *testEnv {
+func newEnv(t testing.TB) *testEnv {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
