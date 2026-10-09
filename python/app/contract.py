@@ -18,6 +18,8 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, StrictInt, model_validator
 
+from .money import line_total_cents
+
 
 class _Contract(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
@@ -37,7 +39,7 @@ class GoItem(_Contract):
 
     @property
     def total_cents(self) -> int:
-        return round(self.price * 100) * self.quantity
+        return line_total_cents(self.price, self.quantity)
 
 
 class GoDelivery(_Contract):

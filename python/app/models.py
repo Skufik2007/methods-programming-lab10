@@ -13,6 +13,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictFloat, 
 from pydantic_core import PydanticCustomError
 
 from .contract import GoOrder
+from .money import has_at_most_two_decimals, line_total_cents
 
 MAX_DELIVERY_DAYS = 90
 
@@ -65,8 +66,7 @@ class Item(_Strict):
     @field_validator("price")
     @classmethod
     def two_decimals(cls, v: float) -> float:
-        cents = v * 100
-        if abs(cents - round(cents)) > 1e-6:
+        if not has_at_most_two_decimals(v):
             # Тип ошибки "money" совпадает с именем правила в Go.
             raise PydanticCustomError("money", "не больше двух знаков после запятой")
         return v
@@ -110,7 +110,7 @@ class OrderRequest(_Strict):
         return items
 
     def total_cents(self) -> int:
-        return sum(round(item.price * 100) * item.quantity for item in self.items)
+        return sum(line_total_cents(item.price, item.quantity) for item in self.items)
 
 
 class ValidationResult(BaseModel):
