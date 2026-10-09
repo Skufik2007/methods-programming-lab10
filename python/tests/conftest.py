@@ -81,6 +81,14 @@ def go_order(owner: str = "alice", created_at: str = "2026-10-09T12:00:00Z", **r
     }
 
 
+def _response(status: int, body: Any) -> httpx.Response:
+    """Ответ поддельного Go: dict — JSON, str — «чужое» тело (HTML прокси и т. п.)."""
+    headers = {"WWW-Authenticate": 'Bearer realm="lab10", error="invalid_token"'} if status == 401 else {}
+    if isinstance(body, str):
+        return httpx.Response(status, text=body, headers={**headers, "Content-Type": "text/html"})
+    return httpx.Response(status, json=body, headers=headers)
+
+
 @dataclass
 class FakeGo:
     """Поддельный Go-сервис: JWKS и заказы. Запоминает запросы для проверок."""
@@ -91,7 +99,7 @@ class FakeGo:
     jwks_down: bool = False
     orders_status: int = 200
     # Если задано — POST /api/v1/orders вернёт это тело вместо созданного заказа.
-    create_response: tuple[int, dict[str, Any]] | None = None
+    create_response: tuple[int, dict[str, Any] | str] | None = None
     seen_headers: list[httpx.Headers] = field(default_factory=list)
     received: list[dict[str, Any]] = field(default_factory=list)
 
@@ -107,12 +115,12 @@ class FakeGo:
                 body = json.loads(request.content)
                 self.received.append(body)
                 if self.create_response is not None:
-                    return httpx.Response(self.create_response[0], json=self.create_response[1])
+                    return _response(*self.create_response)
                 order = go_order(**body)
                 self.orders.append(order)
                 return httpx.Response(201, json=order, headers={"Location": f"/api/v1/orders/{order['id']}"})
             if self.orders_status != 200:
-                return httpx.Response(self.orders_status, json={"error": {"code": "x", "message": "x"}})
+                return _response(self.orders_status, {"error": {"code": "x", "message": "x"}})
             return httpx.Response(200, json={"orders": self.orders, "count": len(self.orders)})
         return httpx.Response(404)
 

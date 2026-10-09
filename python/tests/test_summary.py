@@ -53,6 +53,31 @@ def test_create_order_passes_go_errors(client: TestClient, key: SigningKey, fake
     assert r.json() == go_error
 
 
+def test_go_auth_errors_passed_through(client: TestClient, key: SigningKey, fake_go: FakeGo) -> None:
+    # Токен прошёл проверку в Python, но Go его отклонил (например, истёк между запросами):
+    # в обоих эндпоинтах клиент получает 401 от Go, а не 502.
+    fake_go.orders_status = 401
+    r = client.get("/api/v1/orders/summary", headers=auth(key))
+    assert r.status_code == 401
+    assert r.headers["www-authenticate"].startswith("Bearer")
+
+    fake_go.create_response = (401, {"error": {"code": "invalid_token", "message": "x"}})
+    r = client.post("/api/v1/orders", json=valid_order(), headers=auth(key))
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "invalid_token"
+
+
+def test_go_error_not_in_common_format_is_502(client: TestClient, key: SigningKey, fake_go: FakeGo) -> None:
+    # Раньше resp.json() на HTML-теле давал 500.
+    fake_go.create_response = (422, "<html>bad gateway page</html>")
+    r = client.post("/api/v1/orders", json=valid_order(), headers=auth(key))
+    assert r.status_code == 502
+    assert r.json()["error"]["code"] == "upstream_error"
+
+    fake_go.create_response = (403, {"unexpected": "shape"})
+    assert client.post("/api/v1/orders", json=valid_order(), headers=auth(key)).status_code == 502
+
+
 def test_contract_violation_is_502(client: TestClient, key: SigningKey, fake_go: FakeGo) -> None:
     broken = go_order()
     broken["total_cents"] += 1  # сумма не сходится с позициями

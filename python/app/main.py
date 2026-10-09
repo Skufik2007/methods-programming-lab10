@@ -104,9 +104,8 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         # mode="json": date -> "YYYY-MM-DD"; exclude_none: отсутствующий телефон не уходит как null.
         payload = order.model_dump(mode="json", exclude_none=True)
         resp = await _call_go(request, "POST", "/api/v1/orders", json=payload)
-        if resp.status_code in (401, 403, 422):
-            # Ошибку Go отдаём клиенту как есть: формат ошибок у сервисов общий.
-            return JSONResponse(resp.json(), status_code=resp.status_code)  # type: ignore[return-value]
+        if (passed := _client_error_from_go(resp)) is not None:
+            return passed  # type: ignore[return-value]
         if resp.status_code != 201:
             raise _upstream_error(resp)
         created = _parse(GoOrder, resp)
@@ -118,6 +117,8 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         """Сводка по заказам пользователя: токен проверяется здесь и передаётся Go-сервису,
         ответ Go (список вложенных заказов) разбирается по контракту и агрегируется по SKU."""
         resp = await _call_go(request, "GET", "/api/v1/orders")
+        if (passed := _client_error_from_go(resp)) is not None:
+            return passed  # type: ignore[return-value]
         if resp.status_code != 200:
             raise _upstream_error(resp)
         page = _parse(GoOrdersPage, resp)
@@ -155,6 +156,26 @@ async def _call_go(request: Request, method: str, path: str, json: Any = None) -
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, {"code": "upstream_unavailable", "message": f"Go-сервис недоступен: {exc}"}
         ) from exc
+
+
+def _client_error_from_go(resp: httpx.Response) -> JSONResponse | None:
+    """Ошибку клиента от Go (401/403/422) отдаём как есть — формат ошибок у сервисов общий.
+
+    Пробрасывается только тело в этом формате: если Go (или прокси перед ним) вернул
+    HTML или другой JSON, это ошибка вышестоящего сервиса, и вызывающий код ответит 502.
+    """
+    if resp.status_code not in (401, 403, 422):
+        return None
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict) or not isinstance(body.get("error"), dict):
+        return None
+    headers = {}
+    if "www-authenticate" in resp.headers:
+        headers["WWW-Authenticate"] = resp.headers["www-authenticate"]
+    return JSONResponse(body, status_code=resp.status_code, headers=headers)
 
 
 def _upstream_error(resp: httpx.Response) -> HTTPException:
