@@ -57,7 +57,10 @@ def build_server(
         port=port,
         log_level=log_level,
         access_log=False,  # запросы логирует RequestContextMiddleware
-        timeout_graceful_shutdown=int(shutdown_timeout) or None,
+        # Значение передаётся как есть: uvicorn ждёт через asyncio.wait_for, которому подходят
+        # дробные секунды. int() отбрасывал бы дробную часть, а 0 превращался бы в None —
+        # «ждать бесконечно». Теперь 0 означает «не ждать», как SHUTDOWN_TIMEOUT=0s в Go.
+        timeout_graceful_shutdown=shutdown_timeout,  # type: ignore[arg-type]  # аннотация uvicorn: int
         # proxy_headers нужны за балансировщиком/в compose, чтобы видеть адрес клиента
         proxy_headers=True,
     )

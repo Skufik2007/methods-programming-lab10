@@ -82,6 +82,26 @@ async def test_shutdown_timeout_cancels_long_request(fake_go: FakeGo, settings: 
         pending.cancel()
 
 
+def test_shutdown_timeout_is_passed_exactly(settings: Settings) -> None:
+    # Раньше int(0.5) or None давало None — бесконечное ожидание.
+    for value in (0.5, 2.5, 0):
+        server = build_server(create_app(settings), "127.0.0.1", 0, shutdown_timeout=value, drain_delay=0)
+        assert server.config.timeout_graceful_shutdown == value
+
+
+async def test_zero_shutdown_timeout_does_not_wait(fake_go: FakeGo, settings: Settings) -> None:
+    server, task, url, started = await _start(fake_go, settings, delay=30, shutdown_timeout=0)
+    async with httpx.AsyncClient(base_url=url) as http:
+        pending = asyncio.create_task(http.get("/slow"))
+        await started.wait()
+        loop = asyncio.get_running_loop()
+        begin = loop.time()
+        server.begin_shutdown()
+        await asyncio.wait_for(task, timeout=10)
+        assert loop.time() - begin < 2, "при SHUTDOWN_TIMEOUT=0 сервер не должен ждать запросы"
+        pending.cancel()
+
+
 def test_signal_handler_marks_not_ready(settings: Settings) -> None:
     app = create_app(settings)
     app.state.ready = True
