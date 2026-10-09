@@ -13,14 +13,13 @@
 
 | Колонка таблицы | № | Задание | Где реализовано |
 |---|---|---|---|
-| Средн. 1 | 3 | Валидация входных данных в Go | [`go/internal/orders/validation.go`](go/internal/orders/validation.go), [`go/internal/api/handlers.go`](go/internal/api/handlers.go) |
-| Средн. 2 (Go) | 13 | см. примечание ниже | [`compose.yaml`](compose.yaml), [`go/Dockerfile`](go/Dockerfile), [`python/Dockerfile`](python/Dockerfile) |
-| Средн. 3 | 7 | Graceful shutdown в обоих сервисах | [`go/internal/server/server.go`](go/internal/server/server.go), [`python/app/server.py`](python/app/server.py) |
-| Повыш. 1 | 3 | JWT-аутентификация в Go-сервисе и проверка токенов из Python | [`go/internal/auth/`](go/internal/auth), [`python/app/auth.py`](python/app/auth.py) |
-| Повыш. 2 | 6 | Тесты производительности и сравнение потребления памяти | [`bench/`](bench), [`go/cmd/loadgen`](go/cmd/loadgen) |
+| Средн. 1 | 3 | Реализовать валидацию входных данных в Go | [`go/internal/orders/validation.go`](go/internal/orders/validation.go), [`go/internal/api/handlers.go`](go/internal/api/handlers.go) |
+| Средн. 2 | 5 | Передавать сложные структуры данных (JSON) между сервисами | [`python/app/contract.py`](python/app/contract.py), [`python/app/main.py`](python/app/main.py) |
+| Средн. 3 | 7 | Реализовать graceful shutdown в обоих сервисах | [`go/internal/server/server.go`](go/internal/server/server.go), [`python/app/server.py`](python/app/server.py) |
+| Повыш. 1 | 3 | Добавить аутентификацию (JWT) в Go-сервисе и проверять токены из Python | [`go/internal/auth/`](go/internal/auth), [`python/app/auth.py`](python/app/auth.py) |
+| Повыш. 2 | 5 | Развернуть оба сервиса в Docker Compose с общей сетью | [`compose.yaml`](compose.yaml), [`go/Dockerfile`](go/Dockerfile), [`python/Dockerfile`](python/Dockerfile) |
 
-> **Примечание о задании №13.** В таблице вариантов для варианта 3 в колонке «Средн.2 (Go)» стоит №13, но в списке практических заданий средней сложности только 8 пунктов. Задания в методичке пронумерованы подряд (средние 1–8, затем повышенные), поэтому №13 соответствует пятому заданию повышенного списка: **«Развернуть оба сервиса в Docker Compose с общей сетью»**. Оно выполнено и проверяется в CI (раздел [Docker Compose](#средн-13-оба-сервиса-в-docker-compose-с-общей-сетью)).
-
+Сверх варианта сделано [нагрузочное сравнение Gin и FastAPI с замером памяти](#дополнительно-сравнение-производительности-и-памяти): оно отвечает на главный вопрос цели работы.
 ## Архитектура
 
 ```
@@ -31,11 +30,12 @@
                       │    GET  /.well-known/jwks.json → открытый ключ                     │
                       │    POST /api/v1/orders/validate, /api/v1/orders (валидация, JWT)   │
                       │         ▲              ▲                                           │
-                      │   JWKS  │              │ GET /api/v1/orders + тот же токен         │
+                      │   JWKS  │              │ POST/GET /api/v1/orders + тот же токен    │
                       │  (кеш)  │              │                                           │
  клиент ──Bearer JWT─►│  py-api (FastAPI, :8000)                                           │
                       │    GET /api/v1/me             → токен проверен в Python по JWKS    │
-                      │    GET /api/v1/orders/summary → сводка заказов из Go               │
+                      │    POST /api/v1/orders        → вложенный заказ передаётся в Go    │
+                      │    GET /api/v1/orders/summary → заказы из Go, агрегация по SKU     │
                       └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -54,7 +54,8 @@ lab10/
 │   ├── internal/server/         запуск и graceful shutdown http.Server
 │   └── Dockerfile
 ├── python/                      Python-сервис (FastAPI)
-│   ├── app/                     main, auth (JWKS), models (Pydantic), errors, middleware, server
+│   ├── app/                     main, auth (JWKS), models (Pydantic), contract (ответы Go),
+│   │                            errors, middleware, server
 │   ├── tests/                   pytest, в т.ч. сквозной тест с настоящим Go-сервисом
 │   └── Dockerfile
 ├── bench/                       нагрузочное сравнение, микробенчмарки, результаты
@@ -92,7 +93,7 @@ curl -s localhost:8000/api/v1/me -H "Authorization: Bearer $TOKEN"
 
 ```bash
 cd go && go test -race ./...                       # 25 тестов + 31 подтест
-cd python && pip install -r requirements-dev.txt && pytest   # 39 тестов, включая сквозные с Go
+cd python && pip install -r requirements-dev.txt && pytest   # 45 тестов, включая сквозные с Go
 ruff check python bench deploy && ruff format --check python bench deploy
 ```
 
@@ -142,6 +143,44 @@ ruff check python bench deploy && ruff format --check python bench deploy
 
 FastAPI-сервис проверяет заказ теми же правилами на Pydantic (`python/app/models.py`) и отдаёт ошибки в том же формате. Сквозной тест `test_same_validation_rules` отправляет один и тот же некорректный заказ в оба сервиса и проверяет, что наборы `(field, rule)` совпадают.
 
+### Средн. №5. Передача сложных структур данных (JSON) между сервисами
+
+Между сервисами передаётся заказ — вложенная структура из покупателя, списка позиций и доставки:
+
+```json
+{
+  "id": "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed",
+  "owner": "student",
+  "customer": {"name": "Иван Петров", "email": "ivan@example.com", "phone": "+79991234567"},
+  "items": [
+    {"sku": "ABC-123", "quantity": 2, "price": 199.99},
+    {"sku": "DEF-4567", "quantity": 1, "price": 50}
+  ],
+  "delivery": {"address": "Москва, ул. Пушкина, 1", "date": "2026-10-12"},
+  "comment": "Позвонить за час",
+  "total_cents": 44998,
+  "total": 449.98,
+  "created_at": "2026-10-09T12:00:00Z"
+}
+```
+
+| Направление | Как передаётся |
+|---|---|
+| **Python → Go** | `POST /api/v1/orders` в Python: Pydantic проверяет вложенную структуру по тем же правилам, что в Go, и сериализует её через `model_dump(mode="json", exclude_none=True)`. `date` превращается в `"YYYY-MM-DD"`, отсутствующий телефон не уходит как `null`. Go проверяет заказ ещё раз (защита в глубину). Ошибки Go 401/403/422 Python отдаёт клиенту без изменений: формат ошибок у сервисов общий. |
+| **Go → Python** | Ответы `POST` и `GET /api/v1/orders` разбираются не как `dict`, а по моделям-контракту [`python/app/contract.py`](python/app/contract.py) (`GoOrder`, `GoCustomer`, `GoItem`, `GoDelivery`, `GoOrdersPage`). `id` становится `UUID`, даты — `date`/`datetime`, `quantity` должно быть строго целым. |
+
+Особенности контракта:
+- **Проверяется согласованность вложенных данных:** `total_cents` должен совпадать с суммой позиций, `count` — с длиной списка.
+- **Нарушение контракта** (нет поля, не тот тип, не сходится сумма) даёт ответ **502 `upstream_contract_violation`** с указанием поля, а не 500 с `KeyError` в глубине обработчика.
+- **«Терпимый читатель»:** незнакомые поля игнорируются (`extra="ignore"`), поэтому новое поле в ответе Go не ломает Python.
+- **Деньги передаются в копейках** (`int64` в Go ↔ `int` в Python), поэтому суммы до 10 млн проходят без ошибок округления float.
+- `GET /api/v1/orders/summary` агрегирует вложенные позиции всех заказов по SKU (`by_sku`) и возвращает последний заказ целиком (`last_order`).
+- В каждый запрос к Go пробрасываются токен пользователя и `X-Request-ID`, по которому связываются логи двух сервисов.
+
+Тесты:
+- **с поддельным Go** ([`tests/test_summary.py`](python/tests/test_summary.py)): что именно получил Go; разбор ответа; проброс ошибок Go; 502 при нарушении контракта; агрегация по SKU;
+- **с настоящим Go** ([`tests/test_integration_go.py`](python/tests/test_integration_go.py)): заказ с кириллицей, «кавычками», эмодзи 📦, экранированием и позицией 100 × 999 999.99 создаётся через Python, а затем совпадает с тем, что Go отдаёт напрямую.
+
 ### Средн. №7. Graceful shutdown в обоих сервисах
 
 Порядок остановки одинаковый в Go и Python:
@@ -177,13 +216,24 @@ FastAPI-сервис проверяет заказ теми же правила�
 
 Тесты с обеих сторон проверяют отказ для истёкшего токена, чужих `aud`/`iss`, отсутствия `exp`/`sub`, чужой подписи, `alg=none`, атаки HS256 с открытым ключом и мусора, а также ротацию ключа и ограничение частоты обновления JWKS.
 
-### Повыш. №6. Тесты производительности и сравнение памяти
+### Повыш. №5. Оба сервиса в Docker Compose с общей сетью
+
+- **Go-образ:** многоэтапная сборка, статический бинарь (`CGO_ENABLED=0`), финальный образ `distroless/static:nonroot` без shell. В CI его размер **24 МБ**. Healthcheck выполняет сам бинарь (`/server -healthcheck`), потому что curl в образе нет.
+- **Python-образ:** зависимости ставятся в venv на этапе сборки, в финальный `python:3.12-slim` копируются только venv и код, процесс работает от непривилегированного пользователя. Размер **190 МБ**.
+- **Слои под кеш:** сначала копируются файлы зависимостей (`go.mod/go.sum`, `requirements.txt`) и выполняется их загрузка с BuildKit cache mount, и только потом код. `.dockerignore` пропускает в контекст только нужное.
+- **Сеть `lab10-backend`:** оба сервиса подключены к общей bridge-сети. Python обращается к Go по имени сервиса `http://go-api:8080` через встроенный DNS Docker. `py-api` стартует только после того, как `go-api` прошёл healthcheck (`depends_on: condition: service_healthy`).
+
+Job `compose` в CI собирает образы, ждёт healthcheck обоих сервисов (`--wait`), проверяет DNS внутри сети, прогоняет [`deploy/smoke_test.py`](deploy/smoke_test.py) (вход → проверка токена в Python → заказ в Go → заказ через Python → сводка по SKU из Python через сеть compose) и проверяет graceful остановку контейнеров.
+
+## Дополнительно: сравнение производительности и памяти
+
+Этого задания нет в варианте 3, но оно отвечает на главный вопрос цели работы — чем на практике отличаются FastAPI и Gin.
 
 **Нагрузочный тест** (`bench/run_bench.py`) запускает оба сервиса отдельными процессами с выключенным логом запросов. Затем для двух сценариев — `GET /ping` и `POST /api/v1/orders/validate` (разбор и валидация заказа из 3 позиций) — при 1, 16 и 64 параллельных соединениях он прогоняет генератор нагрузки `go/cmd/loadgen` и раз в 50 мс снимает память процесса. wrk и ab под Windows нет, а генератор на Python сам стал бы узким местом, поэтому генератор написан на Go.
 
 **Микробенчмарки:** `go test -bench -benchmem` (время и аллокации на валидацию и на запрос через роутер Gin) и `bench/micro_validate.py` (Pydantic, пиковая память через `tracemalloc`).
 
-#### Результаты: Linux (GitHub Actions, 4 ядра)
+### Результаты: Linux (GitHub Actions, 4 ядра)
 
 Полные таблицы: [`bench/results/linux-ci.md`](bench/results/linux-ci.md), [`linux-ci-py4.md`](bench/results/linux-ci-py4.md).
 
@@ -200,7 +250,7 @@ FastAPI-сервис проверяет заказ теми же правила�
 | USS в простое, МБ | 19.0 | 51.7 | 181.6 |
 | пик RSS под нагрузкой, МБ | 27.9 | 65.5 | 297.5 |
 
-#### Результаты: Windows 11 (Ryzen 5 5600H, 12 потоков)
+### Результаты: Windows 11 (Ryzen 5 5600H, 12 потоков)
 
 Полные таблицы: [`bench/results/windows.md`](bench/results/windows.md), [`windows-py4.md`](bench/results/windows-py4.md), микробенчмарки — [`micro-windows.md`](bench/results/micro-windows.md).
 
@@ -217,7 +267,7 @@ FastAPI-сервис проверяет заказ теми же правила�
 
 На Windows таймер Go обновляется примерно раз в 0.5 мс, поэтому задержки меньше миллисекунды там округляются. Задержки нужно смотреть в прогоне на Linux.
 
-#### Выводы по производительности
+### Выводы по производительности
 
 - **Пропускная способность.** При одном соединении Gin быстрее FastAPI в 1.8 раза: в основном сказывается задержка сети и цикла событий. Под параллельной нагрузкой разрыв растёт до **7 раз** на Linux (на Windows — до 10): Go обрабатывает запросы горутинами на всех ядрах, а один процесс uvicorn упирается в GIL и одно ядро. Это видно и по p99: у FastAPI при c=64 задержка растёт почти линейно, так как запросы ждут в очереди цикла событий.
 - **Узкое место Python — не Pydantic.** Сама валидация на Pydantic (ядро на Rust) медленнее Go-валидатора всего в 2.5 раза, а весь запрос — в 7 раз. Основное время уходит на ASGI-стек (uvicorn → Starlette → FastAPI → сериализация ответа).
@@ -225,19 +275,11 @@ FastAPI-сервис проверяет заказ теми же правила�
 - **Память.** Go-сервис в простое занимает около 20 МБ RSS и под нагрузкой растёт до 28 МБ. Python — около 64 МБ, и почти всё это стоимость загруженных модулей (FastAPI, Pydantic, cryptography), а не данных. Рост под нагрузкой у обоих небольшой: оба сервиса не держат состояние на запрос.
 - **Итог.** Gin выгоден, когда важны плотность размещения и задержки под нагрузкой. FastAPI выигрывает скоростью разработки: валидация, документация Swagger/OpenAPI и асинхронный клиент «из коробки». Для большинства сервисов его 2–4 тыс. RPS на процесс более чем достаточно.
 
-### Средн. №13. Оба сервиса в Docker Compose с общей сетью
-
-- **Go-образ:** многоэтапная сборка, статический бинарь (`CGO_ENABLED=0`), финальный образ `distroless/static:nonroot` без shell. В CI его размер **24 МБ**. Healthcheck выполняет сам бинарь (`/server -healthcheck`), потому что curl в образе нет.
-- **Python-образ:** зависимости ставятся в venv на этапе сборки, в финальный `python:3.12-slim` копируются только venv и код, процесс работает от непривилегированного пользователя. Размер **190 МБ**.
-- **Слои под кеш:** сначала копируются файлы зависимостей (`go.mod/go.sum`, `requirements.txt`) и выполняется их загрузка с BuildKit cache mount, и только потом код. `.dockerignore` пропускает в контекст только нужное.
-- **Сеть `lab10-backend`:** оба сервиса подключены к общей bridge-сети. Python обращается к Go по имени сервиса `http://go-api:8080` через встроенный DNS Docker. `py-api` стартует только после того, как `go-api` прошёл healthcheck (`depends_on: condition: service_healthy`).
-
-Job `compose` в CI собирает образы, ждёт healthcheck обоих сервисов (`--wait`), проверяет DNS внутри сети, прогоняет [`deploy/smoke_test.py`](deploy/smoke_test.py) (вход → проверка токена в Python → заказ в Go → сводка из Python через сеть compose) и проверяет graceful остановку контейнеров.
-
 ## Итоги
 
-- Тесты: **Go** — 25 тестов и 31 подтест (`-race` в CI), **Python** — 39 тестов, включая сквозные с настоящим Go-сервисом.
+- Тесты: **Go** — 25 тестов и 31 подтест (`-race` в CI), **Python** — 45 тестов, включая сквозные с настоящим Go-сервисом.
 - CI (`.github/workflows/ci.yml`) проходит линтеры (gofmt, go vet, ruff), тесты, нагрузочный прогон на Linux с публикацией таблиц в summary и проверку Docker Compose.
 - Go и Gin требуют больше явного кода: регистрация валидаторов, перевод ошибок, ручная обработка ошибок разбора JSON. Взамен они дают в 7 раз большую пропускную способность и в 3 раза меньший расход памяти.
 - FastAPI и Pydantic описывают те же правила короче и сразу генерируют OpenAPI (`/docs`). Асинхронность помогает ждать сеть (запрос к Go в `/summary`), но не ускоряет вычисления: для CPU-работы Python масштабируется только процессами.
+- Сложные вложенные структуры передаются между сервисами по явному контракту: Python проверяет и ответы Go, поэтому расхождение форматов обнаруживается сразу (502 с указанием поля), а не превращается в тихую ошибку.
 - Взаимодействие сервисов через JWT с асимметричной подписью и JWKS не требует общего секрета и позволяет менять ключ без перезапуска Python-сервиса.
