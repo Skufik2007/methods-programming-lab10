@@ -10,6 +10,7 @@ DoS на Go-сервис.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Any
 
@@ -17,6 +18,8 @@ import httpx
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+log = logging.getLogger("lab10.auth")
 
 ALGORITHM = "RS256"
 LEEWAY_SECONDS = 30
@@ -89,7 +92,16 @@ class JWKSVerifier:
                 return self._keys[kid]
             if kid not in self._keys and now - self._fetched_at < MIN_REFRESH_INTERVAL:
                 raise TokenError(f"неизвестный kid {kid!r}")
-            await self._refresh()
+            try:
+                await self._refresh()
+            except JWKSUnavailableError:
+                if kid not in self._keys:
+                    raise
+                # Go недоступен, но ключ уже известен: истёкший TTL — не повод отклонять
+                # валидные токены. Работаем на старом ключе, повтор — через MIN_REFRESH_INTERVAL.
+                log.warning("JWKS недоступен, используется ранее полученный ключ %s", kid)
+                self._fetched_at = now - self._cache_ttl + MIN_REFRESH_INTERVAL
+                return self._keys[kid]
 
         if kid not in self._keys:
             raise TokenError(f"неизвестный kid {kid!r}")
@@ -103,8 +115,13 @@ class JWKSVerifier:
         except (httpx.HTTPError, ValueError) as exc:
             raise JWKSUnavailableError(f"не удалось получить JWKS с {self._jwks_url}: {exc}") from exc
 
+        if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list):
+            raise JWKSUnavailableError(f"ответ {self._jwks_url} не в формате JWKS: ожидается {{'keys': [...]}}")
+
         keys: dict[str, Any] = {}
-        for jwk in jwks.get("keys", []):
+        for jwk in jwks["keys"]:
+            if not isinstance(jwk, dict):
+                continue
             if jwk.get("kty") != "RSA" or jwk.get("use", "sig") != "sig" or "kid" not in jwk:
                 continue
             try:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import time
+from typing import Any
 
 import httpx
 import jwt
@@ -11,7 +12,7 @@ import pytest
 from conftest import AUDIENCE, ISSUER, FakeGo, SigningKey, new_key
 from fastapi.testclient import TestClient
 
-from app.auth import JWKSVerifier, TokenError
+from app.auth import JWKSUnavailableError, JWKSVerifier, TokenError
 
 
 def auth(token: str) -> dict[str, str]:
@@ -75,6 +76,47 @@ class _Clock:
 
     def __call__(self) -> float:
         return self.now
+
+
+async def test_stale_key_used_when_go_unavailable(key: SigningKey) -> None:
+    fake = FakeGo(keys=[key])
+    clock = _Clock()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fake.handler), base_url="http://go") as http:
+        v = JWKSVerifier(http, "http://go/.well-known/jwks.json", ISSUER, AUDIENCE, cache_ttl=300, clock=clock)
+        await v.verify(key.token())
+        assert fake.jwks_calls == 1
+
+        # TTL истёк, а Go лежит: токен с известным kid всё равно принимается.
+        fake.jwks_down = True
+        clock.now += 301
+        assert (await v.verify(key.token()))["sub"] == "alice"
+        assert fake.jwks_calls == 2
+
+        # Следующая попытка обновления — не раньше чем через MIN_REFRESH_INTERVAL.
+        await v.verify(key.token())
+        assert fake.jwks_calls == 2
+        clock.now += 31
+        await v.verify(key.token())
+        assert fake.jwks_calls == 3
+
+        # Неизвестный kid при недоступном Go — 503, а не 401: токен может быть валидным.
+        clock.now += 31
+        with pytest.raises(JWKSUnavailableError):
+            await v.verify(new_key("other-kid").token())
+
+
+@pytest.mark.parametrize("payload", [[], {"keys": "oops"}, "not json", {"keys": [1, None, {"kty": "RSA"}]}])
+async def test_malformed_jwks(key: SigningKey, payload: Any) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if isinstance(payload, str):
+            return httpx.Response(200, text=payload)
+        return httpx.Response(200, json=payload)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        v = JWKSVerifier(http, "http://go/.well-known/jwks.json", ISSUER, AUDIENCE)
+        # Некорректный JWKS — понятная ошибка (503 или 401 «неизвестный kid»), а не 500.
+        with pytest.raises((JWKSUnavailableError, TokenError)):
+            await v.verify(key.token())
 
 
 async def test_key_rotation_and_refresh_limit(key: SigningKey) -> None:
