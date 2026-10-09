@@ -9,23 +9,34 @@ from __future__ import annotations
 import datetime as dt
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictFloat, StrictInt, field_validator
 from pydantic_core import PydanticCustomError
 
 from .contract import GoOrder
 
 MAX_DELIVERY_DAYS = 90
 
-# Регулярные выражения синхронизированы с Go: SKU — validation.go, телефон — правило e164.
+# Регулярные выражения синхронизированы с Go (go/internal/orders/validation.go):
+# SKU, телефон в формате E.164 и email — один и тот же шаблон в обоих сервисах.
 SKU_PATTERN = r"^[A-Z]{3}-\d{3,6}$"
 E164_PATTERN = r"^\+[1-9]\d{1,14}$"
-# Упрощённая проверка email без внешних зависимостей: локальная часть, @, домен с точкой.
-EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+# Email по стандарту HTML (WHATWG) с обязательной точкой в домене — как EmailPattern в Go.
+EMAIL_PATTERN = (
+    r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
+    r"(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$"
+)
 
 
 def today() -> dt.date:
-    """Вынесено в функцию, чтобы тесты могли подменить «сегодня»."""
+    """«Сегодня» по UTC, как в Go. Вынесено в функцию, чтобы тесты могли его подменить."""
     return dt.datetime.now(dt.UTC).date()
+
+
+def not_blank(value: str) -> str:
+    """Аналог правила notblank в Go: строка из одних пробелов не считается заполненной."""
+    if not value.strip():
+        raise PydanticCustomError("notblank", "не может состоять только из пробелов")
+    return value
 
 
 class _Strict(BaseModel):
@@ -34,9 +45,15 @@ class _Strict(BaseModel):
 
 
 class Customer(_Strict):
-    name: Annotated[str, Field(min_length=2, max_length=100)]
+    name: Annotated[str, Field(min_length=2, max_length=100), AfterValidator(not_blank)]
     email: Annotated[str, Field(max_length=254, pattern=EMAIL_PATTERN)]
     phone: Annotated[str, Field(pattern=E164_PATTERN)] | None = None
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def empty_phone_is_absent(cls, v: object) -> object:
+        # В Go у телефона omitempty: пустая строка означает «не указан», а не ошибку формата.
+        return None if v == "" else v
 
 
 class Item(_Strict):
@@ -56,7 +73,7 @@ class Item(_Strict):
 
 
 class Delivery(_Strict):
-    address: Annotated[str, Field(min_length=5, max_length=300)]
+    address: Annotated[str, Field(min_length=5, max_length=300), AfterValidator(not_blank)]
     date: dt.date
 
     @field_validator("date")
@@ -82,10 +99,12 @@ class OrderRequest(_Strict):
         seen: dict[str, int] = {}
         for i, item in enumerate(items):
             if item.sku in seen:
+                # field в контексте — точный путь к полю (как в Go), иначе ошибка
+                # указывала бы на весь список items.
                 raise PydanticCustomError(
                     "unique_sku",
-                    "items[{i}].sku: SKU повторяется (совпадает с позицией items[{first}])",
-                    {"i": i, "first": seen[item.sku]},
+                    "SKU повторяется (совпадает с позицией items[{first}])",
+                    {"field": f"items[{i}].sku", "first": seen[item.sku]},
                 )
             seen[item.sku] = i
         return items

@@ -43,6 +43,11 @@ def _mutate(path: str, value: Any) -> dict[str, Any]:
         ("items", [], "items", "min"),
         ("customer.name", "И", "customer.name", "min"),
         ("customer.email", "ivan@", "customer.email", "email"),
+        ("customer.email", "ivan@ex..com", "customer.email", "email"),
+        ("customer.email", "ivan@localhost", "customer.email", "email"),
+        ("customer.name", "    ", "customer.name", "notblank"),
+        ("delivery.address", "\t      ", "delivery.address", "notblank"),
+        ("items.0.price", 1_000_000.01, "items[0].price", "max"),
         ("customer.phone", "8-999-123", "customer.phone", "e164"),
         ("items.0.sku", "abc-123", "items[0].sku", "sku"),
         ("items.1.sku", "ABC-", "items[1].sku", "sku"),
@@ -51,7 +56,7 @@ def _mutate(path: str, value: Any) -> dict[str, Any]:
         ("items.0.price", -1, "items[0].price", "gt"),
         ("items.0.price", 1.999, "items[0].price", "money"),
         ("delivery.date", "2020-01-01", "delivery.date", "delivery_date"),
-        ("items.1.sku", "ABC-123", "items", "unique_sku"),
+        ("items.1.sku", "ABC-123", "items[1].sku", "unique_sku"),
         ("comment", "x" * 501, "comment", "max"),
         ("customer.name", ..., "customer.name", "required"),
     ],
@@ -78,6 +83,12 @@ def test_bad_requests(client: TestClient, body: str, status: int, code: str) -> 
     r = client.post(URL, content=body, headers={"Content-Type": "application/json"})
     assert r.status_code == status, r.text
     assert r.json()["error"]["code"] == code
+
+
+def test_empty_phone_is_absent(client: TestClient) -> None:
+    # Как omitempty в Go: пустой телефон — «не указан», а не ошибка формата.
+    r = client.post(URL, json=_mutate("customer.phone", ""))
+    assert r.status_code == 200, r.text
 
 
 def test_strict_types(client: TestClient) -> None:

@@ -69,7 +69,8 @@ def field_path(loc: tuple[Any, ...]) -> str:
 def describe(errors: list[dict[str, Any]]) -> list[dict[str, str]]:
     details = []
     for err in errors:
-        path = field_path(tuple(err["loc"]))
+        # Валидатор уровня списка может указать точное поле в контексте ошибки (см. unique_skus).
+        path = (err.get("ctx") or {}).get("field") or field_path(tuple(err["loc"]))
         kind = err["type"]
         if kind == "string_pattern_mismatch":
             rule = _PATTERN_RULES.get(path.rsplit(".", 1)[-1], "pattern")
