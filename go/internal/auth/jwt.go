@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -145,17 +147,71 @@ func keyID(pub *rsa.PublicKey) (string, error) {
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
-// LoadOrGenerateKey читает RSA-ключ из PEM (PKCS#1 или PKCS#8). Если path пустой,
-// генерирует временный ключ: удобно для разработки, но токены не переживут
-// перезапуск, поэтому в docker-compose ключ передаётся файлом.
-func LoadOrGenerateKey(path string) (*rsa.PrivateKey, error) {
+// LoadOrCreateKey возвращает RSA-ключ подписи токенов.
+//
+//   - path пустой — временный ключ в памяти: удобно для разработки, но после
+//     перезапуска все выданные токены становятся недействительными;
+//   - файл есть — ключ читается из PEM (PKCS#1 или PKCS#8);
+//   - файла нет — ключ создаётся и сохраняется (права 0600), поэтому при
+//     следующем запуске используется тот же ключ и токены остаются валидными.
+//
+// Испорченный файл — ошибка: молча заменить его новым ключом значило бы
+// незаметно аннулировать все выданные токены.
+func LoadOrCreateKey(path string) (key *rsa.PrivateKey, created bool, err error) {
 	if path == "" {
-		return rsa.GenerateKey(rand.Reader, 2048)
+		key, err = rsa.GenerateKey(rand.Reader, 2048)
+		return key, true, err
 	}
 	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("чтение ключа: %w", err)
+	if errors.Is(err, os.ErrNotExist) {
+		key, err = createKeyFile(path)
+		return key, true, err
 	}
+	if err != nil {
+		return nil, false, fmt.Errorf("чтение ключа: %w", err)
+	}
+	key, err = parseKey(data)
+	return key, false, err
+}
+
+// createKeyFile пишет ключ атомарно: временный файл, fsync, rename — при сбое
+// посреди записи на диске не останется обрезанного ключа под итоговым именем.
+func createKeyFile(path string) (*rsa.PrivateKey, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, err
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".jwt-key-*.tmp")
+	if err != nil {
+		return nil, fmt.Errorf("создание ключа: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil && runtime.GOOS != "windows" {
+		tmp.Close()
+		return nil, err
+	}
+	if err := pem.Encode(tmp, &pem.Block{Type: "PRIVATE KEY", Bytes: der}); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return nil, fmt.Errorf("сохранение ключа: %w", err)
+	}
+	return key, nil
+}
+
+func parseKey(data []byte) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode(data)
 	if block == nil {
 		return nil, errors.New("файл ключа не в формате PEM")

@@ -14,6 +14,9 @@ services:
     environment:
       ADDR: ":8080"
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Ключ подписи создаётся при первом запуске и хранится в volume jwt-keys:
+      # после перезапуска go-api выданные токены остаются действительными.
+      JWT_PRIVATE_KEY_FILE: /keys/jwt.pem
       # Демо-пользователь; в реальном развёртывании передаётся через секреты.
       DEMO_USERS: ${DEMO_USERS:-student:student-pass-1:user}
       # Сначала /health/ready -> 503, через 2 с закрывается слушатель.
@@ -21,6 +24,8 @@ services:
       SHUTDOWN_TIMEOUT: 20s
     ports:
       - "8080:8080"
+    volumes:
+      - jwt-keys:/keys
     networks: [backend]
     # Должен быть больше DRAIN_DELAY + SHUTDOWN_TIMEOUT, иначе Docker пришлёт SIGKILL раньше.
     stop_grace_period: 30s
@@ -42,6 +47,9 @@ services:
         condition: service_healthy
     stop_grace_period: 30s
     restart: unless-stopped
+
+volumes:
+  jwt-keys:
 
 networks:
   backend:

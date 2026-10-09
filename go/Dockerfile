@@ -11,11 +11,15 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server \
+    && mkdir -p /out/keys
 
 # ---- финальный образ: distroless без shell и пакетного менеджера, пользователь nonroot ----
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/server /server
+# Каталог для ключа подписи JWT. Владелец — nonroot (65532): Docker копирует его
+# в пустой именованный volume, и сервис сможет создать там ключ при первом запуске.
+COPY --from=build --chown=65532:65532 /out/keys /keys
 EXPOSE 8080
 ENV ADDR=:8080
 # В образе нет curl — проверку готовности выполняет сам бинарь.

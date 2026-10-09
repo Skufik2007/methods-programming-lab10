@@ -7,6 +7,9 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -146,6 +149,49 @@ func TestKeyIDStable(t *testing.T) {
 	b := newIssuer(t, cfg, key(t))
 	if a.kid != b.kid || len(a.kid) != 16 {
 		t.Fatalf("kid %q vs %q", a.kid, b.kid)
+	}
+}
+
+func TestLoadOrCreateKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jwt.pem")
+
+	first, created, err := LoadOrCreateKey(path)
+	if err != nil || !created {
+		t.Fatalf("создание: created=%v err=%v", created, err)
+	}
+	if runtime.GOOS != "windows" {
+		if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+			t.Fatalf("права файла ключа %v, ожидалось 0600", st.Mode().Perm())
+		}
+	}
+
+	// Повторный запуск — тот же ключ, поэтому выданные токены остаются валидными.
+	second, created, err := LoadOrCreateKey(path)
+	if err != nil || created {
+		t.Fatalf("загрузка: created=%v err=%v", created, err)
+	}
+	a, b := newIssuer(t, cfg, first), newIssuer(t, cfg, second)
+	tok, _, _ := a.Issue("alice", "user")
+	if _, err := b.Verify(tok); err != nil {
+		t.Fatalf("токен до перезапуска не принят после: %v", err)
+	}
+
+	entries, _ := os.ReadDir(filepath.Dir(path))
+	if len(entries) != 1 {
+		t.Fatalf("временные файлы остались: %d файлов", len(entries))
+	}
+}
+
+func TestLoadOrCreateKeyRejectsCorruptedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jwt.pem")
+	if err := os.WriteFile(path, []byte("not a pem"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := LoadOrCreateKey(path); err == nil {
+		t.Fatal("испорченный ключ должен давать ошибку, а не молча заменяться")
+	}
+	if data, _ := os.ReadFile(path); string(data) != "not a pem" {
+		t.Fatal("испорченный файл не должен перезаписываться")
 	}
 }
 

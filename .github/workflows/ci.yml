@@ -93,6 +93,15 @@ jobs:
           docker compose exec -T py-api python -c "import socket; print('go-api ->', socket.gethostbyname('go-api'))"
       - name: Smoke-тест
         run: python3 deploy/smoke_test.py
+      - name: Токен остаётся действительным после перезапуска go-api
+        run: |
+          TOKEN=$(curl -sf localhost:8080/auth/login -d '{"username":"student","password":"student-pass-1"}' \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["access_token"])')
+          docker compose restart go-api
+          docker compose up --detach --wait --wait-timeout 60
+          docker compose logs go-api | grep -q 'ключ подписи JWT загружен'
+          curl -sf localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"
+          curl -sf localhost:8000/api/v1/me -H "Authorization: Bearer $TOKEN"
       - name: Размеры образов
         run: |
           echo '### Размеры образов' >> "$GITHUB_STEP_SUMMARY"

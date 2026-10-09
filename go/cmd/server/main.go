@@ -49,12 +49,17 @@ func main() {
 }
 
 func run(cfg config, log *slog.Logger) error {
-	key, err := auth.LoadOrGenerateKey(cfg.KeyFile)
+	key, created, err := auth.LoadOrCreateKey(cfg.KeyFile)
 	if err != nil {
 		return err
 	}
-	if cfg.KeyFile == "" {
+	switch {
+	case cfg.KeyFile == "":
 		log.Warn("JWT_PRIVATE_KEY_FILE не задан: сгенерирован временный ключ, токены не переживут перезапуск")
+	case created:
+		log.Info("создан новый ключ подписи JWT", "file", cfg.KeyFile)
+	default:
+		log.Info("ключ подписи JWT загружен", "file", cfg.KeyFile)
 	}
 	issuer, err := auth.NewIssuer(auth.Config{Issuer: cfg.Issuer, Audience: cfg.Audience, TTL: cfg.TokenTTL}, key)
 	if err != nil {
