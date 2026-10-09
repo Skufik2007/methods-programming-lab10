@@ -8,21 +8,24 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Annotated, Any, TypeVar
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ValidationError
 
 from . import errors
 from .auth import JWKSVerifier, require_claims
 from .config import Settings
+from .contract import GoOrder, GoOrdersPage
 from .middleware import BodyLimitMiddleware, RequestContextMiddleware
-from .models import OrderRequest, OrdersSummary, UserInfo, ValidationResult
+from .models import OrderRequest, OrdersSummary, SkuTotal, UserInfo, ValidationResult
 
 log = logging.getLogger("lab10")
 
 Claims = Annotated[dict[str, Any], Depends(require_claims)]
+ContractT = TypeVar("ContractT", bound=BaseModel)
 
 
 def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
@@ -88,33 +91,86 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
             verified_by="python:jwks",
         )
 
+    @app.post(
+        "/api/v1/orders",
+        tags=["orders"],
+        status_code=status.HTTP_201_CREATED,
+        response_model=GoOrder,
+        responses={422: {"description": "Заказ не прошёл проверку в Python или в Go"}},
+    )
+    async def create_order(order: OrderRequest, request: Request, response: Response, claims: Claims) -> GoOrder:
+        """Создаёт заказ в Go-сервисе: Python проверяет вложенную структуру, сериализует
+        её в JSON для Go и разбирает ответ Go по типизированному контракту."""
+        # mode="json": date -> "YYYY-MM-DD"; exclude_none: отсутствующий телефон не уходит как null.
+        payload = order.model_dump(mode="json", exclude_none=True)
+        resp = await _call_go(request, "POST", "/api/v1/orders", json=payload)
+        if resp.status_code in (401, 403, 422):
+            # Ошибку Go отдаём клиенту как есть: формат ошибок у сервисов общий.
+            return JSONResponse(resp.json(), status_code=resp.status_code)  # type: ignore[return-value]
+        if resp.status_code != 201:
+            raise _upstream_error(resp)
+        created = _parse(GoOrder, resp)
+        response.headers["Location"] = resp.headers.get("location", f"/api/v1/orders/{created.id}")
+        return created
+
     @app.get("/api/v1/orders/summary", tags=["orders"], response_model=OrdersSummary)
     async def orders_summary(request: Request, claims: Claims) -> OrdersSummary:
-        """Сводка по заказам пользователя: токен проверяется здесь и передаётся Go-сервису."""
-        client: httpx.AsyncClient = request.app.state.client
-        headers = {
-            "Authorization": request.headers["authorization"],
-            "X-Request-ID": request.state.request_id,
-        }
-        try:
-            resp = await client.get("/api/v1/orders", headers=headers)
-        except httpx.HTTPError as exc:
-            raise HTTPException(
-                status.HTTP_502_BAD_GATEWAY, {"code": "upstream_unavailable", "message": f"Go-сервис недоступен: {exc}"}
-            ) from exc
+        """Сводка по заказам пользователя: токен проверяется здесь и передаётся Go-сервису,
+        ответ Go (список вложенных заказов) разбирается по контракту и агрегируется по SKU."""
+        resp = await _call_go(request, "GET", "/api/v1/orders")
         if resp.status_code != 200:
-            raise HTTPException(
-                status.HTTP_502_BAD_GATEWAY,
-                {"code": "upstream_error", "message": f"Go-сервис ответил {resp.status_code}"},
-            )
-        orders = resp.json()["orders"]
-        cents = sum(o["total_cents"] for o in orders)
+            raise _upstream_error(resp)
+        page = _parse(GoOrdersPage, resp)
+
+        by_sku: dict[str, SkuTotal] = {}
+        for o in page.orders:
+            for item in o.items:
+                acc = by_sku.setdefault(item.sku, SkuTotal(sku=item.sku, quantity=0, total_cents=0))
+                acc.quantity += item.quantity
+                acc.total_cents += item.total_cents
+        cents = sum(o.total_cents for o in page.orders)
         return OrdersSummary(
             username=claims["sub"],
-            count=len(orders),
+            count=page.count,
             total_cents=cents,
             total=cents / 100,
-            items=sum(len(o["items"]) for o in orders),
+            items=sum(len(o.items) for o in page.orders),
+            by_sku=sorted(by_sku.values(), key=lambda s: (-s.total_cents, s.sku)),
+            last_order=max(page.orders, key=lambda o: o.created_at, default=None),
         )
 
     return app
+
+
+async def _call_go(request: Request, method: str, path: str, json: Any = None) -> httpx.Response:
+    """Запрос к Go с токеном пользователя и X-Request-ID — по нему связываются логи двух сервисов."""
+    client: httpx.AsyncClient = request.app.state.client
+    headers = {
+        "Authorization": request.headers["authorization"],
+        "X-Request-ID": request.state.request_id,
+    }
+    try:
+        return await client.request(method, path, headers=headers, json=json)
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, {"code": "upstream_unavailable", "message": f"Go-сервис недоступен: {exc}"}
+        ) from exc
+
+
+def _upstream_error(resp: httpx.Response) -> HTTPException:
+    return HTTPException(
+        status.HTTP_502_BAD_GATEWAY, {"code": "upstream_error", "message": f"Go-сервис ответил {resp.status_code}"}
+    )
+
+
+def _parse(model: type[ContractT], resp: httpx.Response) -> ContractT:
+    """Разбор тела ответа Go по модели контракта; несоответствие — 502, а не 500."""
+    try:
+        return model.model_validate_json(resp.content)
+    except ValidationError as exc:
+        problems = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()[:5])
+        log.error("ответ Go не соответствует контракту %s: %s", model.__name__, problems)
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            {"code": "upstream_contract_violation", "message": f"ответ Go не соответствует контракту: {problems}"},
+        ) from exc

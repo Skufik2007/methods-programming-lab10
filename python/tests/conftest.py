@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import json
 import time
 import uuid
 from collections.abc import Iterator
@@ -63,16 +64,36 @@ def key() -> SigningKey:
     return new_key("test-kid-1")
 
 
+def go_order(owner: str = "alice", created_at: str = "2026-10-09T12:00:00Z", **request: Any) -> dict[str, Any]:
+    """Заказ в том виде, в каком его возвращает Go (см. go/internal/orders/model.go)."""
+    body = {**valid_order(), **request}
+    cents = sum(round(i["price"] * 100) * i["quantity"] for i in body["items"])
+    return {
+        "id": str(uuid.uuid4()),
+        "owner": owner,
+        "customer": {"phone": "", **body["customer"]},
+        "items": body["items"],
+        "delivery": body["delivery"],
+        "comment": body.get("comment", ""),
+        "total_cents": cents,
+        "total": cents / 100,
+        "created_at": created_at,
+    }
+
+
 @dataclass
 class FakeGo:
-    """Поддельный Go-сервис: JWKS и список заказов. Считает обращения."""
+    """Поддельный Go-сервис: JWKS и заказы. Запоминает запросы для проверок."""
 
     keys: list[SigningKey]
     orders: list[dict[str, Any]] = field(default_factory=list)
     jwks_calls: int = 0
     jwks_down: bool = False
     orders_status: int = 200
+    # Если задано — POST /api/v1/orders вернёт это тело вместо созданного заказа.
+    create_response: tuple[int, dict[str, Any]] | None = None
     seen_headers: list[httpx.Headers] = field(default_factory=list)
+    received: list[dict[str, Any]] = field(default_factory=list)
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if request.url.path == "/.well-known/jwks.json":
@@ -82,6 +103,14 @@ class FakeGo:
             return httpx.Response(200, json={"keys": [k.jwk() for k in self.keys]})
         if request.url.path == "/api/v1/orders":
             self.seen_headers.append(request.headers)
+            if request.method == "POST":
+                body = json.loads(request.content)
+                self.received.append(body)
+                if self.create_response is not None:
+                    return httpx.Response(self.create_response[0], json=self.create_response[1])
+                order = go_order(**body)
+                self.orders.append(order)
+                return httpx.Response(201, json=order, headers={"Location": f"/api/v1/orders/{order['id']}"})
             if self.orders_status != 200:
                 return httpx.Response(self.orders_status, json={"error": {"code": "x", "message": "x"}})
             return httpx.Response(200, json={"orders": self.orders, "count": len(self.orders)})

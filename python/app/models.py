@@ -12,6 +12,8 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, field_validator
 from pydantic_core import PydanticCustomError
 
+from .contract import GoOrder
+
 MAX_DELIVERY_DAYS = 90
 
 # Регулярные выражения синхронизированы с Go: SKU — validation.go, телефон — правило e164.
@@ -106,9 +108,17 @@ class UserInfo(BaseModel):
     verified_by: str = Field(description="Кто проверил подпись токена")
 
 
+class SkuTotal(BaseModel):
+    sku: str
+    quantity: int
+    total_cents: int
+
+
 class OrdersSummary(BaseModel):
     username: str
     count: int
     total_cents: int
     total: float
-    items: int
+    items: int = Field(description="Число позиций во всех заказах")
+    by_sku: list[SkuTotal] = Field(description="Агрегация по вложенным позициям, по убыванию суммы")
+    last_order: GoOrder | None = Field(description="Последний заказ целиком, как его вернул Go")
