@@ -69,6 +69,9 @@ func uniqueSKUs(sl validator.StructLevel) {
 	req := sl.Current().Interface().(CreateRequest)
 	seen := make(map[string]int, len(req.Items))
 	for i, it := range req.Items {
+		if !skuPattern.MatchString(it.SKU) {
+			continue // о невалидном SKU уже сообщило правило sku, дубль не важен
+		}
 		if first, dup := seen[it.SKU]; dup {
 			sl.ReportError(req.Items[i].SKU, fmt.Sprintf("items[%d].sku", i), "SKU", "unique_sku", fmt.Sprint(first))
 			continue
