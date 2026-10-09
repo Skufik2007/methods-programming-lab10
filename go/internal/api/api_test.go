@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -235,7 +236,10 @@ func TestLoginRateLimit(t *testing.T) {
 	}
 	// После 5 неудач блокируется даже верный пароль — иначе перебор продолжался бы.
 	w := e.do("POST", "/auth/login", "", map[string]string{"username": "alice", "password": "alice-pass-1"})
-	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") != "300" {
+	// Окно отсчитывается от первой неудачи, а каждая проверка bcrypt занимает время
+	// (под -race — около секунды), поэтому Retry-After чуть меньше 300 с, но не больше.
+	retry, err := strconv.Atoi(w.Header().Get("Retry-After"))
+	if w.Code != http.StatusTooManyRequests || err != nil || retry < 1 || retry > int(DefaultLoginLockout.Seconds()) {
 		t.Fatalf("status %d, Retry-After %q", w.Code, w.Header().Get("Retry-After"))
 	}
 	if decodeError(t, w).Code != "too_many_attempts" {
